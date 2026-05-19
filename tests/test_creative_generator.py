@@ -417,6 +417,58 @@ class TestCleanScript:
         assert CreativeGenerator._clean_script(raw) == raw
 
 
+class TestNormalizeLengths:
+    def test_short_fields_unchanged(self):
+        c = {"primary_text": "court", "headline": "ok", "description": "d",
+             "video_script": "Phrase normale."}
+        out = CreativeGenerator._normalize_lengths(dict(c))
+        assert out == c
+
+    def test_long_primary_text_trimmed_no_word_cut(self):
+        long = ("Tu paies des frais de déplacement à chaque visite technique "
+                "et personne ne te prévient jamais avant. Vois si t'es éligible "
+                "à une meilleure offre dès maintenant aujourd'hui.")
+        out = CreativeGenerator._normalize_lengths({"primary_text": long})
+        assert len(out["primary_text"]) <= 125
+        assert not out["primary_text"].endswith(" ")
+        # pas de mot coupé : le dernier token est entier
+        assert long.startswith(out["primary_text"].rstrip())
+
+    def test_headline_and_description_capped(self):
+        out = CreativeGenerator._normalize_lengths({
+            "headline": "x" * 100, "description": "y" * 100,
+        })
+        assert len(out["headline"]) <= 40
+        assert len(out["description"]) <= 30
+
+    def test_video_script_trimmed_at_sentence(self):
+        # Script réaliste : plusieurs phrases ~54 car. -> une frontière de
+        # phrase existe bien après limite*0.5, donc coupe nette sur un point.
+        s = "Ça vaut la peine de comparer ton forfait aujourd'hui. " * 12
+        out = CreativeGenerator._normalize_lengths({"video_script": s})
+        assert len(out["video_script"]) <= 420
+        assert out["video_script"].endswith(".")
+
+    def test_video_script_word_trim_when_no_late_sentence(self):
+        # Pas de point après limite*0.5 -> repli sur frontière de mot,
+        # jamais de mot coupé.
+        s = "Phrase courte. " + "mot " * 300
+        out = CreativeGenerator._normalize_lengths({"video_script": s})
+        assert len(out["video_script"]) <= 420
+        assert out["video_script"].endswith("mot")
+
+    def test_concept_output_accepts_overlong_then_normalized(self):
+        # Le modèle ne doit PLUS lever de ValidationError sur longueur
+        long_pt = "a" * 400
+        co = ConceptOutput(
+            angle="a", hook_first_3s="h", video_script="s",
+            primary_text=long_pt, headline="b" * 80, description="c" * 80,
+            avatar_persona="p",
+        )
+        norm = CreativeGenerator._normalize_lengths(co.model_dump())
+        assert len(norm["primary_text"]) <= 125
+
+
 # ----------- System prompt content -----------
 
 class TestSystemPromptContent:

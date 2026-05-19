@@ -36,15 +36,19 @@ log = logging.getLogger(__name__)
 class ConceptOutput(BaseModel):
     angle: str = Field(description="nom court de l'angle, ex: 'frustration_facture'")
     hook_first_3s: str
+    # NB : pas de contrainte `max_length` dure ici. Si Claude dépasse de
+    # quelques caractères, on NE veut PAS perdre la créa sur une
+    # ValidationError → on tronque proprement après parsing
+    # (_normalize_lengths). La longueur cible reste indiquée dans la
+    # description pour guider la génération.
     video_script: str = Field(
-        max_length=420,
-        description="UNIQUEMENT les mots prononcés, ~45-55 mots max (15-22 s). "
-                    "Ton naturel et posé (pas de pub sur-jouée, zéro onomatopée). "
-                    "Pas de didascalies."
+        description="UNIQUEMENT les mots prononcés, ~45-55 mots max (15-22 s, "
+                    "≈420 caractères). Ton naturel et posé (pas de pub "
+                    "sur-jouée, zéro onomatopée). Pas de didascalies."
     )
-    primary_text: str = Field(max_length=125)
-    headline: str = Field(max_length=40)
-    description: str = Field(max_length=30)
+    primary_text: str = Field(description="≤ 125 caractères")
+    headline: str = Field(description="≤ 40 caractères")
+    description: str = Field(description="≤ 30 caractères")
     avatar_persona: str
 
 
@@ -122,6 +126,33 @@ class CreativeGenerator:
         self.cost_tracker = cost_tracker
         self.diversity = diversity
 
+    @staticmethod
+    def _trim(text: str, limit: int, sentence_aware: bool = False) -> str:
+        """Tronque proprement à <= limit caractères, sur une frontière de
+        phrase (si sentence_aware) sinon de mot, sans couper un mot."""
+        text = (text or "").strip()
+        if len(text) <= limit:
+            return text
+        cut = text[:limit]
+        if sentence_aware:
+            end = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
+            if end >= limit * 0.5:
+                return cut[:end + 1].strip()
+        sp = cut.rfind(" ")
+        return (cut[:sp] if sp > 0 else cut).strip()
+
+    @classmethod
+    def _normalize_lengths(cls, concept: dict) -> dict:
+        """Garantit des champs aux longueurs sûres pour Meta. Évite de
+        perdre une créa entière à cause de quelques caractères en trop."""
+        concept["primary_text"] = cls._trim(concept.get("primary_text", ""), 125)
+        concept["headline"] = cls._trim(concept.get("headline", ""), 40)
+        concept["description"] = cls._trim(concept.get("description", ""), 30)
+        concept["video_script"] = cls._trim(
+            concept.get("video_script", ""), 420, sentence_aware=True
+        )
+        return concept
+
     def generate_concept(self, vertical: str, past_winners: list, category: Optional[str] = None) -> dict:
         """
         Claude génère un concept complet.
@@ -162,7 +193,7 @@ class CreativeGenerator:
         )
         if self.cost_tracker:
             self.cost_tracker.record_anthropic("claude-opus-4-7", response.usage, purpose=f"concept:{vertical}")
-        return response.parsed_output.model_dump()
+        return self._normalize_lengths(response.parsed_output.model_dump())
 
     def regenerate_safe(self, original: dict, issues: list, source: str = "policy") -> dict:
         """
@@ -196,7 +227,7 @@ class CreativeGenerator:
             self.cost_tracker.record_anthropic(
                 "claude-opus-4-7", response.usage, purpose=f"regenerate_safe:{source}"
             )
-        return response.parsed_output.model_dump()
+        return self._normalize_lengths(response.parsed_output.model_dump())
 
     def generate_video(self, brief: dict) -> str:
         """
