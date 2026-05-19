@@ -1,15 +1,13 @@
 """
-Diagnostic Meta — la Page/compte pub/Business sont OK (déjà confirmé).
-On cherche la VRAIE cause du 400 sur create_ad_creative :
-  (1) le message d'erreur Meta COMPLET (stocké dans le dead_letter),
-  (2) le statut du formulaire instantané (un form en brouillon => rejet),
-  (3) infos App (mode dev éventuel).
-Lectures seules, 0 dépense.
+Diagnostic Meta — on cherche le message d'erreur Meta COMPLET (dans
+logs/cron.log, le dead_letter ne stocke qu'une version tronquée) +
+le statut réel du formulaire instantané. Lectures seules, 0 dépense.
 
 Usage (VPS) :
     cd /root/automatisation && git pull && .venv/bin/python tools/check_page.py
 """
 import os
+import re
 import json
 from pathlib import Path
 
@@ -25,78 +23,63 @@ FORM_ID = str(CONFIG["meta"].get("lead_gen_form_id", ""))
 PAGE_ID = str(CONFIG["meta"]["page_id"])
 V = "v19.0"
 
+print("=" * 60)
+print("1. MESSAGE META COMPLET (logs/cron.log : lignes 'Meta API error')")
+print("=" * 60)
+log = ROOT / "logs" / "cron.log"
+if log.exists():
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    hits = [
+        ln for ln in lines
+        if ("Meta API error" in ln or "error_user" in ln
+            or "développement" in ln or "doit être" in ln
+            or "adcreatives" in ln)
+    ]
+    # Dédoublonne en gardant l'ordre, garde les 8 derniers (sans le token)
+    seen, uniq = set(), []
+    for ln in hits:
+        clean = re.sub(r"access_token=[A-Za-z0-9]+", "access_token=<caché>", ln)
+        key = clean[:300]
+        if key not in seen:
+            seen.add(key)
+            uniq.append(clean)
+    for ln in uniq[-8:]:
+        print(ln[:1200])
+        print("-" * 60)
+    if not uniq:
+        print("Aucune ligne d'erreur Meta trouvée dans cron.log.")
+else:
+    print("Pas de logs/cron.log (les runs manuels loguent peut-être ailleurs).")
 
-def get(path, fields):
-    r = requests.get(
-        f"https://graph.facebook.com/{V}/{path}",
-        params={"fields": fields, "access_token": TOKEN},
+print("\n" + "=" * 60)
+print("2. FORMULAIRE INSTANTANÉ — statut réel (via Page Access Token)")
+print("=" * 60)
+# Récupère un Page Access Token (le token a pages_read_engagement/manage_ads)
+pt = requests.get(
+    f"https://graph.facebook.com/{V}/{PAGE_ID}",
+    params={"fields": "access_token", "access_token": TOKEN}, timeout=30,
+)
+page_token = (pt.json() or {}).get("access_token")
+print(f"Page Access Token obtenu : {'oui' if page_token else 'NON -> ' + pt.text[:300]}")
+if page_token and FORM_ID:
+    f = requests.get(
+        f"https://graph.facebook.com/{V}/{FORM_ID}",
+        params={"fields": "id,name,status,locale,leads_count",
+                "access_token": page_token}, timeout=30,
+    )
+    print(f"\nGET form {FORM_ID} -> {f.status_code}")
+    print(json.dumps(f.json(), indent=2, ensure_ascii=False)[:1500])
+    lst = requests.get(
+        f"https://graph.facebook.com/{V}/{PAGE_ID}/leadgen_forms",
+        params={"fields": "id,name,status", "access_token": page_token},
         timeout=30,
     )
-    try:
-        return r.status_code, r.json()
-    except Exception:
-        return r.status_code, {"raw": r.text[:800]}
-
-
-print("=" * 60)
-print("1. ERREUR META COMPLÈTE (dernier échec create_ad_creative)")
-print("=" * 60)
-dlq = ROOT / "data" / "dead_letter.json"
-if dlq.exists():
-    try:
-        items = json.loads(dlq.read_text(encoding="utf-8"))
-        if isinstance(items, dict):
-            items = items.get("items", items.get("_items", []))
-        creatives = [
-            it for it in items
-            if isinstance(it, dict) and it.get("operation") == "launch_creative"
-        ]
-        last = creatives[-3:] if creatives else []
-        for it in last:
-            print(json.dumps(it, indent=2, ensure_ascii=False)[:2500])
-            print("-" * 60)
-        if not last:
-            print("Aucune entrée launch_creative dans le dead_letter.")
-    except Exception as e:
-        print(f"Lecture dead_letter impossible: {e}")
-else:
-    print("Pas de data/dead_letter.json.")
+    print(f"\nTous les formulaires de la Page -> {lst.status_code}")
+    print(json.dumps(lst.json(), indent=2, ensure_ascii=False)[:2000])
 
 print("\n" + "=" * 60)
-print("2. FORMULAIRE INSTANTANÉ (un statut != ACTIVE bloque la créa)")
-print("=" * 60)
-if FORM_ID:
-    sc, form = get(
-        FORM_ID,
-        "id,name,status,locale,privacy_policy{url,link_text},"
-        "page,questions,follow_up_action_url",
-    )
-    print(f"GET form {FORM_ID} -> {sc}")
-    print(json.dumps(form, indent=2, ensure_ascii=False)[:2500])
-    # Tous les forms de la Page, avec leur statut
-    sc2, forms = get(f"{PAGE_ID}/leadgen_forms", "id,name,status")
-    print(f"\nFormulaires de la Page -> {sc2}")
-    print(json.dumps(forms, indent=2, ensure_ascii=False)[:2000])
-else:
-    print("Pas de lead_gen_form_id en config.")
-
-print("\n" + "=" * 60)
-print("3. APP liée au token")
-print("=" * 60)
-sc, dbg = get("debug_token", "")
-# debug_token ne prend pas 'fields' ; refais l'appel correctement
-r = requests.get(
-    f"https://graph.facebook.com/{V}/debug_token",
-    params={"input_token": TOKEN, "access_token": TOKEN}, timeout=30,
-)
-app_id = (r.json().get("data", {}) or {}).get("app_id")
-print(f"app_id = {app_id}")
-if app_id:
-    sca, app = get(app_id, "id,name,link,app_type,category")
-    print(f"GET app {app_id} -> {sca}")
-    print(json.dumps(app, indent=2, ensure_ascii=False)[:1200])
-
-print("\n" + "=" * 60)
-print("LECTURE : regarde (1) error_user_title / error_user_msg / subcode,")
-print("et (2) form.status — s'il n'est pas 'ACTIVE', c'est LA cause.")
+print("LECTURE :")
+print(" - Section 1 : le message Meta en entier. Si on lit 'application")
+print("   ... mode développement' => il faut passer l'App en Live.")
+print(" - Section 2 : form.status doit être 'ACTIVE' (pas DRAFT/ARCHIVED).")
 print("Colle TOUTE la sortie.")
