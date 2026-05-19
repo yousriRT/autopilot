@@ -230,7 +230,7 @@ class MetaAdsAutoPilot:
                 raise RuntimeError(f"[{vertical}] Concept rejeté après {MAX_REGEN_ATTEMPTS} tentatives")
 
         # 4. Génération vidéo Arcads
-        log.info(f"[{vertical}] Génération vidéo via Arcads...")
+        log.info(f"[{vertical}] Génération vidéo ({self.creative_gen.video_provider})...")
         video_url = self.creative_gen.generate_video(creative_brief)
 
         # 5. Upload + create_creative pour preview Meta

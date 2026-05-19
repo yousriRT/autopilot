@@ -19,6 +19,8 @@
     "voice_source": "elevenlabs",
     "voice_id": "",
     "avatar_style": "normal",
+    "background": { "type": "color", "value": "#EAE3D6" },
+    "_comment_bg": "Fond chaleureux au lieu du blanc clinique. Peut être {\"type\":\"image\",\"url\":\"https://...\"} pour un vrai décor d'intérieur.",
     "dimension": { "width": 720, "height": 1280 }
   },
 

@@ -86,23 +86,38 @@ class TestUploadVideo:
 
 class TestCreateAdCreative:
     def test_returns_creative_id(self, publisher):
-        with patch.object(publisher, "_request") as mreq:
-            mreq.return_value = {"id": "creative_xyz"}
+        with patch.object(publisher, "_request") as mreq, \
+             patch("meta_publisher.time.sleep"):
+            # 1er appel = GET thumbnail, 2e = POST adcreatives
+            mreq.side_effect = [
+                {"thumbnails": {"data": [
+                    {"uri": "https://t/x.jpg", "is_preferred": True}
+                ]}},
+                {"id": "creative_xyz"},
+            ]
             cid = publisher.create_ad_creative(
                 "video_1", "primary", "headline", "desc"
             )
             assert cid == "creative_xyz"
-            data = mreq.call_args.kwargs["data"]
-            # object_story_spec est un str JSON valide
+            data = mreq.call_args.kwargs["data"]  # dernier appel = POST
             import json as jsonmod
             spec = jsonmod.loads(data["object_story_spec"])
             assert spec["page_id"] == "page_123"
             assert spec["video_data"]["video_id"] == "video_1"
-            # Pub à formulaire instantané : le CTA pointe vers le form Meta natif,
-            # jamais vers un lien externe (sinon get_ad_leads ne capte rien).
+            # Miniature obligatoire pour Meta (sinon erreur 1443226)
+            assert spec["video_data"]["image_url"] == "https://t/x.jpg"
             cta = spec["video_data"]["call_to_action"]
             assert cta["value"]["lead_gen_form_id"] == "form_999"
             assert "link" not in cta["value"]
+
+    def test_thumbnail_polls_until_ready(self, publisher):
+        with patch.object(publisher, "_request") as mreq, \
+             patch("meta_publisher.time.sleep"):
+            mreq.side_effect = [
+                {"status": {"video_status": "processing"}, "thumbnails": {"data": []}},
+                {"thumbnails": {"data": [{"uri": "https://t/ok.jpg"}]}},
+            ]
+            assert publisher._video_thumbnail_url("vid_1") == "https://t/ok.jpg"
 
     def test_raises_without_form_id(self, base_config):
         import copy
@@ -249,10 +264,12 @@ class TestGetOrCreateCampaign:
 
 class TestPublishAdFlow:
     def test_full_flow(self, publisher):
-        with patch.object(publisher, "_request") as mreq:
+        with patch.object(publisher, "_request") as mreq, \
+             patch("meta_publisher.time.sleep"):
             mreq.side_effect = [
                 {"data": [{"id": "camp_1", "name": "AUTOPILOT_FIBRE", "status": "ACTIVE"}]},
                 {"id": "video_1"},      # upload_video
+                {"thumbnails": {"data": [{"uri": "https://t/x.jpg"}]}},  # thumbnail poll
                 {"id": "creative_1"},   # create_ad_creative
                 {"id": "adset_1"},      # _create_adset
                 {"id": "ad_1"},         # _create_ad

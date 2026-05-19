@@ -88,6 +88,30 @@ class MetaPublisher:
         log.info(f"Video uploaded: {result['id']}")
         return result["id"]
 
+    def _video_thumbnail_url(self, video_id: str, max_wait_s: int = 150,
+                             interval_s: int = 5) -> str:
+        """
+        Meta exige une miniature dans video_data. Après upload, Meta traite
+        la vidéo puis génère des thumbnails. On poll jusqu'à en avoir une.
+        """
+        waited = 0
+        while waited < max_wait_s:
+            res = self._request(
+                "GET", video_id, params={"fields": "status,thumbnails"}
+            )
+            thumbs = (res.get("thumbnails") or {}).get("data") or []
+            if thumbs:
+                pref = next((t for t in thumbs if t.get("is_preferred")), thumbs[0])
+                return pref["uri"]
+            vstatus = (res.get("status") or {}).get("video_status")
+            if vstatus == "error":
+                raise RuntimeError(f"Meta : traitement vidéo {video_id} en erreur")
+            time.sleep(interval_s)
+            waited += interval_s
+        raise TimeoutError(
+            f"Pas de miniature Meta pour {video_id} après {max_wait_s}s"
+        )
+
     def create_ad_creative(self, video_id: str, primary_text: str,
                            headline: str, description: str,
                            cta: str = "GET_QUOTE") -> str:
@@ -98,11 +122,14 @@ class MetaPublisher:
                 "lead_gen_form_id manquant dans config.meta — requis pour les "
                 "pubs à formulaire instantané (sinon les leads ne sont pas captés)."
             )
+        # Meta refuse un creative vidéo sans miniature (image_url/image_hash).
+        thumbnail_url = self._video_thumbnail_url(video_id)
         creative = {
             "object_story_spec": {
                 "page_id": self.page_id,
                 "video_data": {
                     "video_id": video_id,
+                    "image_url": thumbnail_url,
                     "title": headline,
                     "message": primary_text,
                     "link_description": description,

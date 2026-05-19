@@ -19,6 +19,7 @@ côté landing page / formulaire de soumission, pas dans la pub.
 """
 
 import os
+import re
 import json
 import time
 import logging
@@ -73,7 +74,13 @@ ANGLES RECOMMANDÉS PAR VERTICALE (à varier, pas répéter):
 - securite: cambriolage de quartier, voyages tranquilles, parents âgés
 - famille_4lignes: ado qui explose son forfait data, gestion des écrans, partage facile entre 4 lignes, contrôle parental optionnel, économies vs 4 lignes séparées
 
-RÈGLE DE DIVERSITÉ: ne reproduis jamais un angle déjà gagnant à l'identique. Varie le hook, l'avatar, le pain point."""
+RÈGLE DE DIVERSITÉ: ne reproduis jamais un angle déjà gagnant à l'identique. Varie le hook, l'avatar, le pain point.
+
+CONTRAINTE CRITIQUE SUR LE CHAMP video_script:
+- `video_script` ne contient QUE les mots EXACTEMENT prononcés par l'avatar, en français québécois.
+- ZÉRO indication de mise en scène, de ton, d'émotion, de caméra ou de timing.
+- INTERDIT dans video_script: crochets [ ], parenthèses ( ), didascalies, "(ton posé)", "[sourire]", "change pour un ton enjoué", noms de personnage, "Hook:", "CTA:", numéros de plan.
+- Le texte sera lu TEL QUEL par une voix de synthèse : tout caractère non destiné à être dit sera prononcé à voix haute. Écris uniquement la réplique, rien d'autre."""
 
 
 class CreativeGenerator:
@@ -302,20 +309,46 @@ class CreativeGenerator:
             raise RuntimeError(f"Upload audio HeyGen : réponse inattendue {res}")
         return asset
 
+    @staticmethod
+    def _clean_script(text: str) -> str:
+        """
+        Garde uniquement les mots prononcés. Supprime les didascalies que
+        Claude pourrait glisser (crochets, parenthèses, préfixes type
+        'Hook:', 'CTA:', 'Voix off:') — sinon la TTS les lit à voix haute.
+        """
+        if not text:
+            return ""
+        # Retire [..] et (..) (didascalies / indications de jeu)
+        text = re.sub(r"\[[^\]]*\]", " ", text)
+        text = re.sub(r"\([^)]*\)", " ", text)
+        # Retire les préfixes de ligne type "Hook:", "CTA :", "Voix off -"
+        cleaned = []
+        for line in text.splitlines():
+            line = re.sub(
+                r"^\s*(hook|cta|voix\s*off|narrateur|avatar|script|plan\s*\d*)\s*[:\-–]\s*",
+                "", line, flags=re.IGNORECASE,
+            )
+            cleaned.append(line)
+        text = " ".join(cleaned)
+        # Normalise les espaces
+        return re.sub(r"\s+", " ", text).strip()
+
     def _heygen_voice_block(self, brief: dict) -> dict:
         """
         Construit le bloc 'voice' HeyGen. Par défaut on passe par ElevenLabs
         (voix québécoise fr-CA) puisque HeyGen n'a pas de voix fr-CA ;
         fallback voix HeyGen native si voice_source != 'elevenlabs'.
+        Le script est nettoyé des didascalies avant d'être vocalisé.
         """
+        script = self._clean_script(brief["video_script"])
         if self.heygen_cfg.get("voice_source", "elevenlabs") == "elevenlabs":
-            audio = self._elevenlabs_tts(brief["video_script"])
+            audio = self._elevenlabs_tts(script)
             asset_id = self._heygen_upload_audio(audio)
             return {"type": "audio", "audio_asset_id": asset_id}
         voice_id = self.heygen_cfg.get("voice_id")
         if not voice_id:
             raise RuntimeError("heygen.voice_id requis quand voice_source != elevenlabs.")
-        return {"type": "text", "input_text": brief["video_script"], "voice_id": voice_id}
+        return {"type": "text", "input_text": script, "voice_id": voice_id}
 
     def _generate_heygen(self, brief: dict) -> str:
         """
@@ -349,6 +382,11 @@ class CreativeGenerator:
             ],
             "dimension": dimension,
         }
+        # Décor de fond optionnel (au lieu du fond blanc clinique).
+        # heygen.background = {"type":"image","url":"..."} ou {"type":"color","value":"#.."}
+        background = self.heygen_cfg.get("background")
+        if background:
+            payload["video_inputs"][0]["background"] = background
 
         @retry_with_backoff(max_attempts=3, retryable_exceptions=(requests.RequestException,))
         def _post_job():

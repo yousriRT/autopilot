@@ -328,6 +328,29 @@ class TestHeygenElevenLabs:
             gen.generate_video({"video_script": "s", "avatar_persona": "p"})
 
 
+class TestCleanScript:
+    def test_strips_stage_directions(self):
+        raw = "[ton posé] Salut! (sourire) Ma facture montait. CTA: vas-y."
+        out = CreativeGenerator._clean_script(raw)
+        assert "[" not in out and "]" not in out
+        assert "(" not in out and ")" not in out
+        assert "ton posé" not in out
+        assert "sourire" not in out
+        assert not out.lower().startswith("cta")
+        assert "Ma facture montait." in out
+
+    def test_strips_line_prefixes_and_normalizes(self):
+        raw = "Hook: T'es tanné?\nVoix off - Change pour mieux."
+        out = CreativeGenerator._clean_script(raw)
+        assert "Hook:" not in out
+        assert "Voix off" not in out
+        assert out == "T'es tanné? Change pour mieux."
+
+    def test_plain_script_untouched(self):
+        raw = "Franchement, ça vaut la peine d'essayer."
+        assert CreativeGenerator._clean_script(raw) == raw
+
+
 # ----------- System prompt content -----------
 
 class TestSystemPromptContent:
