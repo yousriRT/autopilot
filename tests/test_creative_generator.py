@@ -1,0 +1,344 @@
+"""Tests pour CreativeGenerator — Claude (concept + regen) + Arcads (vidéo)."""
+
+import pytest
+from unittest.mock import MagicMock, patch
+from creative_generator import CreativeGenerator, ConceptOutput, CONCEPT_SYSTEM
+
+
+@pytest.fixture
+def gen(base_config, mock_anthropic_client):
+    return CreativeGenerator(base_config, claude_client=mock_anthropic_client)
+
+
+def make_parse_response(parsed, input_tokens=500, output_tokens=300):
+    mock = MagicMock()
+    mock.parsed_output = parsed
+    mock.usage = MagicMock(
+        input_tokens=input_tokens, output_tokens=output_tokens,
+        cache_creation_input_tokens=0, cache_read_input_tokens=0,
+    )
+    return mock
+
+
+def make_concept(angle="frustration_facture"):
+    return ConceptOutput(
+        angle=angle,
+        hook_first_3s="Hook test 3s",
+        video_script="Script complet test",
+        primary_text="Primary text",
+        headline="Headline",
+        description="Desc",
+        avatar_persona="femme 40 ans QC",
+    )
+
+
+# ----------- generate_concept -----------
+
+class TestGenerateConcept:
+    def test_returns_dict(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        result = gen.generate_concept("famille_4lignes", past_winners=[])
+        assert isinstance(result, dict)
+        assert result["angle"] == "frustration_facture"
+
+    def test_uses_opus_4_7(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.generate_concept("fibre", past_winners=[])
+        assert mock_anthropic_client.messages.parse.call_args.kwargs["model"] == "claude-opus-4-7"
+
+    def test_passes_winners_to_message(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        winners = ["frustration_facture (CPL 5€)", "voisin_fibre (CPL 7€)"]
+        gen.generate_concept("fibre", past_winners=winners)
+        msg_content = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "frustration_facture" in msg_content
+
+    def test_handles_empty_winners(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.generate_concept("fibre", past_winners=[])
+        msg_content = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "aucun" in msg_content.lower() or "première" in msg_content.lower()
+
+    def test_with_diversity_category_constraint(self, base_config, mock_anthropic_client):
+        diversity = MagicMock()
+        diversity.get_brief.return_value = "Catégorie family : ado, conjoint..."
+        gen = CreativeGenerator(base_config, claude_client=mock_anthropic_client, diversity=diversity)
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.generate_concept("famille_4lignes", past_winners=[], category="family")
+        msg = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "family" in msg
+        assert "Catégorie family" in msg
+
+    def test_no_category_no_brief_in_message(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.generate_concept("fibre", past_winners=[], category=None)
+        msg = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "CATÉGORIE D'ANGLE IMPOSÉE" not in msg
+
+
+# ----------- regenerate_safe -----------
+
+class TestRegenerateSafe:
+    def test_with_policy_source(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept("nouveau"))
+        original = make_concept("ancien").model_dump()
+        result = gen.regenerate_safe(original, ["mention Bell"], source="policy")
+        assert result["angle"] == "nouveau"
+        msg = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "policy validator" in msg.lower() or "Claude" in msg
+
+    def test_with_meta_preview_source(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept("v2"))
+        original = make_concept("v1").model_dump()
+        result = gen.regenerate_safe(original, ["text trop long"], source="meta_preview")
+        msg = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "Meta Preview" in msg
+
+    def test_includes_issues_list(self, gen, mock_anthropic_client):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        original = make_concept().model_dump()
+        gen.regenerate_safe(original, ["issue A", "issue B"], source="policy")
+        msg = mock_anthropic_client.messages.parse.call_args.kwargs["messages"][0]["content"]
+        assert "issue A" in msg
+        assert "issue B" in msg
+
+
+# ----------- Cost tracking -----------
+
+class TestCostTracking:
+    def test_records_concept_cost(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(base_config, claude_client=mock_anthropic_client, cost_tracker=ct)
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.generate_concept("fibre", past_winners=[])
+        ct.record_anthropic.assert_called_once()
+        assert ct.record_anthropic.call_args.args[0] == "claude-opus-4-7"
+
+    def test_records_regen_cost_with_purpose(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(base_config, claude_client=mock_anthropic_client, cost_tracker=ct)
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(make_concept())
+        gen.regenerate_safe(make_concept().model_dump(), ["x"], source="meta_preview")
+        purpose = ct.record_anthropic.call_args.kwargs.get("purpose")
+        assert "meta_preview" in purpose
+
+    def test_records_arcads_video(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(base_config, claude_client=mock_anthropic_client, cost_tracker=ct)
+
+        # Mock arcads completion
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"job_id": "job_x"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "completed", "video_url": "https://video.test/x.mp4"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception  # for retry decorator
+            with patch("creative_generator.time.sleep"):  # accélérer
+                url = gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+        assert url.startswith("https://")
+        ct.record_arcads.assert_called_once()
+
+
+# ----------- Arcads video generation -----------
+
+class TestGenerateArcads:
+    def test_returns_video_url_on_completion(self, gen):
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"job_id": "j1"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "completed", "video_url": "https://x/y.mp4"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                url = gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+        assert url == "https://x/y.mp4"
+
+    def test_raises_on_arcads_failed(self, gen):
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "failed", "error": "bad script"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                with pytest.raises(RuntimeError, match="bad script"):
+                    gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+    def test_raises_on_timeout(self, gen):
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None
+            )
+            # Toujours processing
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "processing"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                with pytest.raises(TimeoutError):
+                    gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+    def test_invalid_provider_raises(self, base_config, mock_anthropic_client):
+        config = {**base_config, "video_provider": "unknown"}
+        gen = CreativeGenerator(config, claude_client=mock_anthropic_client)
+        with pytest.raises(ValueError, match="Provider"):
+            gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+
+def _heygen_config(base_config):
+    return {
+        **base_config,
+        "video_provider": "heygen",
+        "heygen": {
+            "api_key": "hg_test",
+            "avatar_id": "av_1",
+            "voice_source": "heygen",
+            "voice_id": "vo_frca",
+            "dimension": {"width": 720, "height": 1280},
+        },
+    }
+
+
+class TestGenerateHeygen:
+    def test_returns_video_url_on_completion(self, base_config, mock_anthropic_client):
+        gen = CreativeGenerator(_heygen_config(base_config), claude_client=mock_anthropic_client)
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"error": None, "data": {"video_id": "vid_1"}},
+                raise_for_status=lambda: None,
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"data": {"status": "completed", "video_url": "https://hg/v.mp4"}},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                url = gen.generate_video({"video_script": "s", "avatar_persona": "p", "angle": "a"})
+        assert url == "https://hg/v.mp4"
+
+    def test_records_heygen_cost(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(_heygen_config(base_config), claude_client=mock_anthropic_client, cost_tracker=ct)
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"data": {"video_id": "vid_1"}}, raise_for_status=lambda: None
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"data": {"status": "completed", "video_url": "https://hg/v.mp4"}},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+        ct.record_heygen.assert_called_once()
+
+    def test_raises_on_heygen_failed(self, base_config, mock_anthropic_client):
+        gen = CreativeGenerator(_heygen_config(base_config), claude_client=mock_anthropic_client)
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = MagicMock(
+                json=lambda: {"data": {"video_id": "vid_1"}}, raise_for_status=lambda: None
+            )
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"data": {"status": "failed", "error": "bad voice"}},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                with pytest.raises(RuntimeError, match="bad voice"):
+                    gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+    def test_raises_when_config_incomplete(self, base_config, mock_anthropic_client):
+        config = {**base_config, "video_provider": "heygen", "heygen": {"api_key": "k"}}
+        gen = CreativeGenerator(config, claude_client=mock_anthropic_client)
+        with pytest.raises(RuntimeError, match="HeyGen incomplète"):
+            gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+
+def _heygen_elevenlabs_config(base_config):
+    return {
+        **base_config,
+        "video_provider": "heygen",
+        "heygen": {
+            "api_key": "hg_test",
+            "avatar_id": "av_1",
+            "voice_source": "elevenlabs",
+            "dimension": {"width": 720, "height": 1280},
+        },
+        "elevenlabs": {
+            "api_key": "el_test",
+            "voice_id": "qc_voice",
+            "model_id": "eleven_multilingual_v2",
+        },
+    }
+
+
+class TestHeygenElevenLabs:
+    """Pipeline retenu : voix québécoise ElevenLabs → avatar HeyGen (lip-sync)."""
+
+    def test_elevenlabs_audio_piped_to_heygen(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(
+            _heygen_elevenlabs_config(base_config),
+            claude_client=mock_anthropic_client, cost_tracker=ct,
+        )
+        el_resp = MagicMock(content=b"mp3-bytes", raise_for_status=lambda: None)
+        upload_resp = MagicMock(
+            json=lambda: {"data": {"id": "asset_99"}}, raise_for_status=lambda: None
+        )
+        gen_resp = MagicMock(
+            json=lambda: {"data": {"video_id": "vid_1"}}, raise_for_status=lambda: None
+        )
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.side_effect = [el_resp, upload_resp, gen_resp]
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"data": {"status": "completed", "video_url": "https://hg/v.mp4"}},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                url = gen.generate_video({"video_script": "Bonjour", "avatar_persona": "p"})
+
+        assert url == "https://hg/v.mp4"
+        # 1er POST = ElevenLabs TTS, 2e = upload HeyGen, 3e = generate
+        first_call = mock_req.post.call_args_list[0]
+        assert "elevenlabs.io" in first_call.args[0]
+        # le payload generate doit utiliser l'audio uploadé, pas une voix HeyGen
+        gen_payload = mock_req.post.call_args_list[2].kwargs["json"]
+        voice = gen_payload["video_inputs"][0]["voice"]
+        assert voice == {"type": "audio", "audio_asset_id": "asset_99"}
+        ct.record_heygen.assert_called_once()
+
+    def test_raises_when_elevenlabs_config_missing(self, base_config, mock_anthropic_client):
+        cfg = _heygen_elevenlabs_config(base_config)
+        cfg["elevenlabs"] = {}  # pas de clé ni voice_id
+        gen = CreativeGenerator(cfg, claude_client=mock_anthropic_client)
+        with pytest.raises(RuntimeError, match="ElevenLabs incomplète"):
+            gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+
+# ----------- System prompt content -----------
+
+class TestSystemPromptContent:
+    def test_telus_in_blacklist(self):
+        # Mémoire : Telus DOIT être listé interdit
+        assert "Telus" in CONCEPT_SYSTEM
+
+    def test_no_brand_constraint_present(self):
+        assert "Ne nomme JAMAIS de marque" in CONCEPT_SYSTEM
+        assert "Bell" in CONCEPT_SYSTEM
+
+    def test_famille_angle_recommended(self):
+        assert "famille_4lignes" in CONCEPT_SYSTEM
+        assert "ado" in CONCEPT_SYSTEM.lower()

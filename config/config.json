@@ -1,0 +1,96 @@
+{
+  "daily_total_budget": 75.0,
+  "_comment_budget": "SEUL paramètre de budget que tu fixes : ton plafond quotidien total. Le bandit répartit tout seul.",
+
+  "active_verticals": ["fibre", "mobile"],
+  "_comment_active": "Verticales traitées (pilote). Mettre [] ou retirer la clé pour activer les 5.",
+
+  "anthropic": {
+    "api_key": "OVERRIDE_VIA_ENV"
+  },
+
+  "arcads": {
+    "api_key": "OVERRIDE_VIA_ENV"
+  },
+
+  "heygen": {
+    "_comment": "avatar_id à choisir via tools/heygen_catalog.py. voice_source=elevenlabs car HeyGen n'a pas de voix québécoise (l'avatar lip-sync sur l'audio ElevenLabs fr-CA).",
+    "avatar_id": "Ann_Casual_Front_public",
+    "voice_source": "elevenlabs",
+    "voice_id": "",
+    "avatar_style": "normal",
+    "dimension": { "width": 720, "height": 1280 }
+  },
+
+  "elevenlabs": {
+    "_comment": "Voix québécoise fr-CA. voice_id à choisir via tools/elevenlabs_catalog.py (clé via env ELEVENLABS_API_KEY).",
+    "voice_id": "bBRsDJSAcL1ubkrtJ3hM",
+    "_voice_name": "Caroline - accent québécois doux (Voice Library)",
+    "model_id": "eleven_multilingual_v2",
+    "voice_settings": {
+      "stability": 0.4,
+      "similarity_boost": 0.8,
+      "style": 0.35,
+      "use_speaker_boost": true,
+      "speed": 1.12
+    }
+  },
+
+  "video_provider": "heygen",
+
+  "dashboard": {
+    "_comment": "Email résumé quotidien. SMTP credentials via env: SMTP_USER + SMTP_PASSWORD (Gmail App Password, pas mot de passe compte).",
+    "recipient_email": "yousriblaligg@gmail.com"
+  },
+
+
+  "meta": {
+    "access_token": "OVERRIDE_VIA_ENV",
+    "ad_account_id": "act_27109591352028062",
+    "page_id": "1132799143252946",
+    "lead_gen_form_id": "1691157705401234",
+    "_comment_lead_form": "ID du formulaire instantané Meta. Les leads sont récupérés via l'API (get_ad_leads) puis scorés par qualité.",
+    "pixel_id": "",
+    "_comment_pixel": "Optionnel : non requis avec un formulaire instantané (l'optimisation se fait via la Page, pas le pixel).",
+
+    "_comment_targeting": "Ajuste selon ta zone et ton profil client. Le ciblage par verticale.",
+    "targeting": {
+      "fibre": {
+        "geo_locations": {"countries": ["CA"], "regions": [{"key": "1024"}]},
+        "age_min": 30,
+        "age_max": 65,
+        "interests": [{"id": "6003020834693", "name": "Internet"}]
+      },
+      "mobile": {
+        "geo_locations": {"countries": ["CA"]},
+        "age_min": 25,
+        "age_max": 60,
+        "interests": [{"id": "6003331697616", "name": "Mobile phones"}]
+      },
+      "tv": {
+        "geo_locations": {"countries": ["CA"]},
+        "age_min": 35,
+        "age_max": 70,
+        "interests": [{"id": "6003156666873", "name": "Television"}]
+      },
+      "securite": {
+        "geo_locations": {"countries": ["CA"]},
+        "age_min": 35,
+        "age_max": 70,
+        "interests": [{"id": "6003254307668", "name": "Home security"}]
+      },
+      "famille_4lignes": {
+        "_comment": "Parents 35-55 avec ados 13-19, ciblés pour forfait mobile 4 lignes",
+        "geo_locations": {"countries": ["CA"]},
+        "age_min": 35,
+        "age_max": 55,
+        "interests": [
+          {"id": "6003101148142", "name": "Parenting"},
+          {"id": "6003107902433", "name": "Family"},
+          {"id": "6003331697616", "name": "Mobile phones"}
+        ],
+        "family_statuses": [{"id": 6023005622083, "name": "Parents (All)"}]
+      }
+    }
+  }
+}

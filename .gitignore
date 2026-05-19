@@ -1,0 +1,31 @@
+# Secrets — NE JAMAIS committer
+.env
+
+# Données runtime + PII prospects (Loi 25 : jamais dans le repo)
+data/
+logs/
+
+# Site (déployé séparément sur GitHub Pages, repo propre)
+site/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Tests / couverture
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Réglages locaux Claude Code (machine-spécifiques)
+.claude/
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

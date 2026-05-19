@@ -1,0 +1,11 @@
+# Cron Meta Ads Auto-Pilot — à coller via `crontab -e` sur le VPS.
+# Remplace /root/automatisation par le chemin réel du repo cloné si différent.
+#
+# optimize : toutes les heures (léger : API Meta + bandit + kill-switch)
+0 * * * * cd /root/automatisation && .venv/bin/python src/orchestrator.py --action optimize >> logs/cron.log 2>&1
+#
+# launch : 1×/jour à 9h (coûte de l'argent : Claude + HeyGen)
+0 9 * * * cd /root/automatisation && .venv/bin/python src/orchestrator.py --action launch >> logs/cron.log 2>&1
+#
+# dashboard : résumé quotidien par email à 20h (si SMTP configuré)
+0 20 * * * cd /root/automatisation && .venv/bin/python src/orchestrator.py --action dashboard >> logs/cron.log 2>&1
