@@ -103,6 +103,10 @@ class CreativeGenerator:
         # L'audio TTS est envoyé à l'avatar HeyGen qui fait le lip-sync.
         self.elevenlabs_cfg = config.get("elevenlabs", {})
         self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or self.elevenlabs_cfg.get("api_key")
+        # Creatify : vrai UGC (acteurs style téléphone). Auth = 2 en-têtes.
+        self.creatify_cfg = config.get("creatify", {})
+        self.creatify_api_id = os.getenv("CREATIFY_API_ID") or self.creatify_cfg.get("api_id")
+        self.creatify_api_key = os.getenv("CREATIFY_API_KEY") or self.creatify_cfg.get("api_key")
         self.cost_tracker = cost_tracker
         self.diversity = diversity
 
@@ -191,6 +195,8 @@ class CreativeGenerator:
             return self._generate_arcads(brief)
         elif self.video_provider == "heygen":
             return self._generate_heygen(brief)
+        elif self.video_provider == "creatify":
+            return self._generate_creatify(brief)
         else:
             raise ValueError(f"Provider inconnu: {self.video_provider}")
 
@@ -431,3 +437,82 @@ class CreativeGenerator:
                 raise RuntimeError(f"HeyGen failed: {data.get('error')}")
 
         raise TimeoutError("HeyGen timeout après ~7 min")
+
+    def _pick_creatify_persona(self, brief: dict) -> str:
+        """persona_id fixe, ou rotation déterministe dans persona_pool."""
+        pool = self.creatify_cfg.get("persona_pool")
+        if pool:
+            seed = (brief.get("avatar_persona") or "") + (brief.get("angle") or "")
+            return pool[hash(seed) % len(pool)]
+        return self.creatify_cfg.get("persona_id")
+
+    def _generate_creatify(self, brief: dict) -> str:
+        """
+        API Creatify (vrai UGC). Flux : create lipsync -> render -> poll.
+        ⚠ L'étape render est OBLIGATOIRE sinon la vidéo n'est jamais produite.
+        Doc: https://docs.creatify.ai/api-documentation/ai-avatar/lipsync
+        """
+        persona_id = self._pick_creatify_persona(brief)
+        voice_id = self.creatify_cfg.get("voice_id")
+        if not (self.creatify_api_id and self.creatify_api_key and persona_id and voice_id):
+            raise RuntimeError(
+                "Config Creatify incomplète : CREATIFY_API_ID + CREATIFY_API_KEY "
+                "+ creatify.persona_id (ou persona_pool) + creatify.voice_id requis."
+            )
+
+        base = "https://api.creatify.ai/api"
+        headers = {
+            "X-API-ID": self.creatify_api_id,
+            "X-API-KEY": self.creatify_api_key,
+            "Content-Type": "application/json",
+        }
+        body = {
+            "text": self._clean_script(brief["video_script"]),
+            "creator": persona_id,
+            "accent": voice_id,
+            "aspect_ratio": self.creatify_cfg.get("aspect_ratio", "9x16"),
+            "model_version": self.creatify_cfg.get("model_version", "standard"),
+            "no_caption": self.creatify_cfg.get("no_caption", True),
+            "no_music": self.creatify_cfg.get("no_music", True),
+        }
+        if not body["no_caption"]:
+            body["caption_style"] = self.creatify_cfg.get("caption_style", "normal-white")
+
+        @retry_with_backoff(max_attempts=3, retryable_exceptions=(requests.RequestException,))
+        def _create():
+            r = requests.post(f"{base}/lipsyncs/", headers=headers, json=body, timeout=30)
+            r.raise_for_status()
+            return r.json()
+
+        job_id = _create()["id"]
+        log.info(f"Creatify job créé: {job_id}")
+
+        # Étape render OBLIGATOIRE (sinon jamais généré)
+        @retry_with_backoff(max_attempts=3, retryable_exceptions=(requests.RequestException,))
+        def _render():
+            r = requests.post(f"{base}/lipsyncs/{job_id}/render/", headers=headers, timeout=30)
+            r.raise_for_status()
+            return r.json() if r.content else {}
+
+        _render()
+        log.info(f"Creatify render lancé: {job_id}")
+
+        @retry_with_backoff(max_attempts=2, retryable_exceptions=(requests.RequestException,))
+        def _poll():
+            r = requests.get(f"{base}/lipsyncs/{job_id}/", headers=headers, timeout=20)
+            r.raise_for_status()
+            return r.json()
+
+        for _ in range(90):  # ~7.5 min max
+            time.sleep(5)
+            data = _poll()
+            if data.get("status") == "done":
+                url = data["output"]
+                log.info(f"Vidéo Creatify prête: {url}")
+                if self.cost_tracker:
+                    self.cost_tracker.record_creatify(video_id=job_id)
+                return url
+            if data.get("status") == "failed":
+                raise RuntimeError(f"Creatify failed: {data.get('failed_reason')}")
+
+        raise TimeoutError("Creatify timeout après ~7 min")

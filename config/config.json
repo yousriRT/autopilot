@@ -38,7 +38,18 @@
     }
   },
 
-  "video_provider": "heygen",
+  "creatify": {
+    "_comment": "Vrai UGC. Auth via env CREATIFY_API_ID + CREATIFY_API_KEY. persona_id/voice_id à choisir via tools/creatify_catalog.py (style=selfie pour UGC, voix française/QC).",
+    "persona_id": "FILL_FROM_CATALOG",
+    "voice_id": "FILL_FROM_CATALOG",
+    "aspect_ratio": "9x16",
+    "model_version": "standard",
+    "no_caption": false,
+    "caption_style": "normal-white",
+    "no_music": true
+  },
+
+  "video_provider": "creatify",
 
   "dashboard": {
     "_comment": "Email résumé quotidien. SMTP credentials via env: SMTP_USER + SMTP_PASSWORD (Gmail App Password, pas mot de passe compte).",

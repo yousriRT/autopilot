@@ -37,6 +37,9 @@ ARCADS_USD_PER_VIDEO = 7.0
 # Estimation HeyGen API (Avatar III ~1$/min → ~0,50$ pour une UGC 30s)
 HEYGEN_USD_PER_VIDEO = 0.5
 
+# Estimation Creatify API Starter (5 crédits / vidéo 30s, 99$/500 crédits)
+CREATIFY_USD_PER_VIDEO = 1.0
+
 
 class CostTracker:
     """Persiste les coûts dans data/cost_log.jsonl (append-only) + agrégats."""
@@ -117,12 +120,24 @@ class CostTracker:
         })
         return cost
 
+    def record_creatify(self, video_id: str = "", duration_s: Optional[int] = None):
+        """Une vidéo générée Creatify (vrai UGC)."""
+        cost = CREATIFY_USD_PER_VIDEO
+        self._append({
+            "type": "creatify",
+            "video_id": video_id,
+            "duration_s": duration_s,
+            "cost_usd": cost,
+        })
+        return cost
+
     def get_daily_costs(self, day: Optional[datetime] = None) -> dict:
         """Agrège les coûts du jour donné (défaut = aujourd'hui)."""
         target_date = (day or datetime.now()).date()
         totals = {
-            "anthropic": 0.0, "arcads": 0.0, "heygen": 0.0,
+            "anthropic": 0.0, "arcads": 0.0, "heygen": 0.0, "creatify": 0.0,
             "anthropic_calls": 0, "arcads_calls": 0, "heygen_calls": 0,
+            "creatify_calls": 0,
             "creation_total_usd": 0.0,
         }
 
@@ -147,11 +162,15 @@ class CostTracker:
                     elif t == "heygen":
                         totals["heygen"] += cost
                         totals["heygen_calls"] += 1
+                    elif t == "creatify":
+                        totals["creatify"] += cost
+                        totals["creatify_calls"] += 1
                 except (json.JSONDecodeError, ValueError, KeyError):
                     continue
 
         totals["creation_total_usd"] = (
-            totals["anthropic"] + totals["arcads"] + totals["heygen"]
+            totals["anthropic"] + totals["arcads"]
+            + totals["heygen"] + totals["creatify"]
         )
         return totals
 

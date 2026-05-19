@@ -328,6 +328,73 @@ class TestHeygenElevenLabs:
             gen.generate_video({"video_script": "s", "avatar_persona": "p"})
 
 
+def _creatify_config(base_config):
+    return {
+        **base_config,
+        "video_provider": "creatify",
+        "creatify": {
+            "api_id": "cid",
+            "api_key": "ckey",
+            "persona_id": "persona_1",
+            "voice_id": "voice_fr",
+            "aspect_ratio": "9x16",
+            "no_caption": True,
+        },
+    }
+
+
+class TestGenerateCreatify:
+    def test_create_render_poll_returns_url(self, base_config, mock_anthropic_client):
+        ct = MagicMock()
+        gen = CreativeGenerator(
+            _creatify_config(base_config),
+            claude_client=mock_anthropic_client, cost_tracker=ct,
+        )
+        create_resp = MagicMock(json=lambda: {"id": "job1"}, content=b"{}",
+                                raise_for_status=lambda: None)
+        render_resp = MagicMock(json=lambda: {}, content=b"{}",
+                                raise_for_status=lambda: None)
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.side_effect = [create_resp, render_resp]
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "done", "output": "https://c/v.mp4"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                url = gen.generate_video({"video_script": "Bonjour [ton posé]",
+                                          "avatar_persona": "p", "angle": "a"})
+        assert url == "https://c/v.mp4"
+        # render OBLIGATOIRE : 2e POST = .../render/
+        assert mock_req.post.call_args_list[1].args[0].endswith("/lipsyncs/job1/render/")
+        # script nettoyé (didascalie retirée avant envoi)
+        sent = mock_req.post.call_args_list[0].kwargs["json"]["text"]
+        assert "[" not in sent and "ton posé" not in sent
+        ct.record_creatify.assert_called_once()
+
+    def test_failed_status_raises(self, base_config, mock_anthropic_client):
+        gen = CreativeGenerator(_creatify_config(base_config), claude_client=mock_anthropic_client)
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.side_effect = [
+                MagicMock(json=lambda: {"id": "j"}, content=b"{}", raise_for_status=lambda: None),
+                MagicMock(json=lambda: {}, content=b"{}", raise_for_status=lambda: None),
+            ]
+            mock_req.get.return_value = MagicMock(
+                json=lambda: {"status": "failed", "failed_reason": "bad persona"},
+                raise_for_status=lambda: None,
+            )
+            mock_req.RequestException = Exception
+            with patch("creative_generator.time.sleep"):
+                with pytest.raises(RuntimeError, match="bad persona"):
+                    gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+    def test_incomplete_config_raises(self, base_config, mock_anthropic_client):
+        cfg = {**base_config, "video_provider": "creatify", "creatify": {"api_id": "x"}}
+        gen = CreativeGenerator(cfg, claude_client=mock_anthropic_client)
+        with pytest.raises(RuntimeError, match="Creatify incomplète"):
+            gen.generate_video({"video_script": "s", "avatar_persona": "p"})
+
+
 class TestCleanScript:
     def test_strips_stage_directions(self):
         raw = "[ton posé] Salut! (sourire) Ma facture montait. CTA: vas-y."

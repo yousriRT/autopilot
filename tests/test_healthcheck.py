@@ -140,6 +140,38 @@ class TestRunHealthcheck:
         assert report["checks"]["env_HEYGEN_API_KEY"] == "missing"
         assert exit_code == HEALTH_CRITICAL
 
+    def test_creatify_provider_requires_creatify_keys(
+        self, base_config, mock_publisher, monkeypatch
+    ):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+        monkeypatch.setenv("META_ACCESS_TOKEN", "x")
+        monkeypatch.setenv("CREATIFY_API_ID", "x")
+        monkeypatch.setenv("CREATIFY_API_KEY", "x")
+        monkeypatch.delenv("ARCADS_API_KEY", raising=False)
+        cfg = {**base_config, "video_provider": "creatify"}
+        claude = MagicMock()
+        claude.models.list.return_value = iter([MagicMock()])
+        mock_publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
+        _, report = run_healthcheck(cfg, claude, mock_publisher, MagicMock(state={"ads": {}}))
+        assert "env_ARCADS_API_KEY" not in report["checks"]
+        assert report["checks"]["env_CREATIFY_API_ID"] == "ok"
+        assert report["checks"]["env_CREATIFY_API_KEY"] == "ok"
+
+    def test_creatify_missing_key_critical(
+        self, base_config, mock_publisher, monkeypatch
+    ):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+        monkeypatch.setenv("META_ACCESS_TOKEN", "x")
+        monkeypatch.setenv("CREATIFY_API_ID", "x")
+        monkeypatch.delenv("CREATIFY_API_KEY", raising=False)
+        cfg = {**base_config, "video_provider": "creatify"}
+        claude = MagicMock()
+        claude.models.list.return_value = iter([MagicMock()])
+        mock_publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
+        exit_code, report = run_healthcheck(cfg, claude, mock_publisher, MagicMock(state={"ads": {}}))
+        assert report["checks"]["env_CREATIFY_API_KEY"] == "missing"
+        assert exit_code == HEALTH_CRITICAL
+
     def test_dlq_pending_warns_when_high(self, env_setup, base_config, mock_publisher, tmp_path):
         with patch("resilience.DeadLetterQueue") as mdlq:
             instance = MagicMock()

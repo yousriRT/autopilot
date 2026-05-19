@@ -44,7 +44,9 @@ def run_healthcheck(config: dict, claude_client, publisher, optimizer) -> tuple[
     # --- 1. Env vars critiques (selon le fournisseur vidéo configuré) ---
     required = ["ANTHROPIC_API_KEY", "META_ACCESS_TOKEN"]
     provider = config.get("video_provider", "arcads")
-    if provider == "heygen":
+    if provider == "creatify":
+        required += ["CREATIFY_API_ID", "CREATIFY_API_KEY"]
+    elif provider == "heygen":
         required.append("HEYGEN_API_KEY")
         if config.get("heygen", {}).get("voice_source", "elevenlabs") == "elevenlabs":
             required.append("ELEVENLABS_API_KEY")
