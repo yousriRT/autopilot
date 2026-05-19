@@ -50,8 +50,11 @@ Tout le reste en dépend. Deux options :
 - [x] Token Meta généré + validé (`meta_account: OK` au healthcheck)
 - [x] `.env` créé + chargement auto (`load_dotenv` ajouté à orchestrator)
 - [x] Clé **Anthropic** validée (`anthropic_api: ok` au healthcheck)
-- [x] ~~Arcads~~ abandonné (API à 525 $/mois) → bascule **HeyGen** (clé OK, pay-as-you-go)
-- [x] Code HeyGen + ElevenLabs implémenté et testé (363 tests)
+- [x] ~~Arcads~~ (525 $/mois) puis ~~HeyGen~~ (avatar IA pas crédible, rejeté au test réel)
+- [x] → **Creatify** retenu (vrai UGC). Code implémenté + testé (376 tests)
+- [ ] Compte Creatify **plan API Starter (99 $/mois)** + clés `CREATIFY_API_ID` + `CREATIFY_API_KEY`
+- [ ] Choisir persona UGC (style selfie) + voix française via `tools/creatify_catalog.py`
+- [ ] Test 1 vidéo réelle → valider la qualité UGC avant relance
 - [x] ElevenLabs : clé OK, voix **Caroline QC** ajoutée + réglée (speed 1.12)
 - [x] Avatar HeyGen : `Ann_Casual_Front_public` (swappable)
 - [x] **Test vidéo réel validé par Yousri** (accent + vitesse PARFAIT)

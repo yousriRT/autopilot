@@ -30,8 +30,9 @@ print("\n--- SCRIPT BRUT (ce que Claude a écrit) ---")
 print(raw)
 print("\n--- SCRIPT NETTOYÉ (ce qui sera RÉELLEMENT prononcé) ---")
 print(clean)
-print(f"\nAvatar: {config['heygen']['avatar_id']} | Fond: {config['heygen'].get('background')}")
-print("Voix: Caroline QC | Génération vidéo (ElevenLabs -> HeyGen)...")
+prov = config.get("video_provider")
+print(f"\nProvider: {prov} | config: {config.get(prov, {})}")
+print("Génération vidéo en cours...")
 
 url = gen.generate_video(brief)
 

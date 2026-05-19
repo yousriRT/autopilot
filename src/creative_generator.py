@@ -36,7 +36,12 @@ log = logging.getLogger(__name__)
 class ConceptOutput(BaseModel):
     angle: str = Field(description="nom court de l'angle, ex: 'frustration_facture'")
     hook_first_3s: str
-    video_script: str
+    video_script: str = Field(
+        max_length=420,
+        description="UNIQUEMENT les mots prononcés, ~45-55 mots max (15-22 s). "
+                    "Ton naturel et posé (pas de pub sur-jouée, zéro onomatopée). "
+                    "Pas de didascalies."
+    )
     primary_text: str = Field(max_length=125)
     headline: str = Field(max_length=40)
     description: str = Field(max_length=30)
@@ -51,7 +56,7 @@ CONTEXTE FIXE:
 - Marché: Canada (Québec)
 - Cible: dépend de la verticale (précisée dans le message utilisateur)
 - Objectif: lead form Meta (soumission)
-- Format: vidéo UGC 15-30 secondes, ratio 9:16
+- Format: vidéo UGC COURTE 15-22 secondes, ratio 9:16 (script ~45-55 mots MAX)
 - Langue: français québécois naturel, pas de jargon corporate
 - Positionnement: "une offre télécom" — JAMAIS de marque nommée. Le branding se fait sur la landing page après le lead, pas dans la pub.
 
@@ -80,7 +85,14 @@ CONTRAINTE CRITIQUE SUR LE CHAMP video_script:
 - `video_script` ne contient QUE les mots EXACTEMENT prononcés par l'avatar, en français québécois.
 - ZÉRO indication de mise en scène, de ton, d'émotion, de caméra ou de timing.
 - INTERDIT dans video_script: crochets [ ], parenthèses ( ), didascalies, "(ton posé)", "[sourire]", "change pour un ton enjoué", noms de personnage, "Hook:", "CTA:", numéros de plan.
-- Le texte sera lu TEL QUEL par une voix de synthèse : tout caractère non destiné à être dit sera prononcé à voix haute. Écris uniquement la réplique, rien d'autre."""
+- Le texte sera lu TEL QUEL par une voix de synthèse : tout caractère non destiné à être dit sera prononcé à voix haute. Écris uniquement la réplique, rien d'autre.
+- LONGUEUR STRICTE: video_script = 45 à 55 mots MAXIMUM (15-22 s parlé). Au-delà, la génération vidéo casse (la voix change en cours).
+
+TON DU SCRIPT (IMPORTANT):
+- Ton NATUREL et POSÉ, comme une vraie personne qui raconte calmement un truc à un ami — PAS une pub sur-jouée.
+- INTERDIT: onomatopées et interjections théâtrales ("pouf", "bam", "boom", "paf", "hop", "tadam"), points d'exclamation à répétition, MAJUSCULES d'emphase, "hook" gadget.
+- Phrases simples et fluides, vocabulaire de tous les jours. Un seul pain point raconté simplement, puis un CTA bref et naturel.
+- Imagine quelqu'un qui parle vrai, sans forcer. Si une phrase sonne "pub", réécris-la plus simple."""
 
 
 class CreativeGenerator:
@@ -487,16 +499,8 @@ class CreativeGenerator:
         job_id = _create()["id"]
         log.info(f"Creatify job créé: {job_id}")
 
-        # Étape render OBLIGATOIRE (sinon jamais généré)
-        @retry_with_backoff(max_attempts=3, retryable_exceptions=(requests.RequestException,))
-        def _render():
-            r = requests.post(f"{base}/lipsyncs/{job_id}/render/", headers=headers, timeout=30)
-            r.raise_for_status()
-            return r.json() if r.content else {}
-
-        _render()
-        log.info(f"Creatify render lancé: {job_id}")
-
+        # NB : pas d'appel /render/ — le flux v1 réel est create → poll → done
+        # (render renvoie 400 "Lipsync is running" et n'est pas nécessaire).
         @retry_with_backoff(max_attempts=2, retryable_exceptions=(requests.RequestException,))
         def _poll():
             r = requests.get(f"{base}/lipsyncs/{job_id}/", headers=headers, timeout=20)

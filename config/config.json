@@ -40,8 +40,10 @@
 
   "creatify": {
     "_comment": "Vrai UGC. Auth via env CREATIFY_API_ID + CREATIFY_API_KEY. persona_id/voice_id à choisir via tools/creatify_catalog.py (style=selfie pour UGC, voix française/QC).",
-    "persona_id": "FILL_FROM_CATALOG",
-    "voice_id": "FILL_FROM_CATALOG",
+    "persona_id": "34b6dc45-e342-4a03-b5e1-39b12ef10f79",
+    "_persona_name": "Paige (brune, femme adulte, intérieur) — variante rousse: cb230f3e-109a-47cc-b72b-0ec7708a2414",
+    "voice_id": "68017270-207a-4204-a7a8-be0c2d792c20",
+    "_voice_name": "Victoria — voix FRANÇAISE NATIVE Creatify (test diagnostic lip-sync)",
     "aspect_ratio": "9x16",
     "model_version": "standard",
     "no_caption": false,
