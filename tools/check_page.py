@@ -1,13 +1,17 @@
 """
-Diagnostic Meta — on cherche le message d'erreur Meta COMPLET (dans
-logs/cron.log, le dead_letter ne stocke qu'une version tronquée) +
-le statut réel du formulaire instantané. Lectures seules, 0 dépense.
+Diagnostic Meta DÉCISIF — rejoue exactement l'appel POST /adcreatives qui
+échoue, mais avec un video_id bidon (0 vidéo générée, 0 dépense). Meta
+valide App/Page/permissions AVANT la vidéo :
+  - si erreur "app en mode développement / Page must be public"
+        => cause = App pas en Live (fix gratuit côté developers.facebook)
+  - si erreur "video ... not found / invalid"
+        => couche App/Page OK, le souci est vidéo/miniature
+Affiche le JSON d'erreur Meta COMPLET (error_user_title/msg/subcode).
 
 Usage (VPS) :
     cd /root/automatisation && git pull && .venv/bin/python tools/check_page.py
 """
 import os
-import re
 import json
 from pathlib import Path
 
@@ -19,67 +23,54 @@ load_dotenv(ROOT / ".env")
 
 CONFIG = json.load(open(ROOT / "config" / "config.json", encoding="utf-8"))
 TOKEN = os.getenv("META_ACCESS_TOKEN") or CONFIG["meta"]["access_token"]
-FORM_ID = str(CONFIG["meta"].get("lead_gen_form_id", ""))
+ACT_ID = CONFIG["meta"]["ad_account_id"]
 PAGE_ID = str(CONFIG["meta"]["page_id"])
+FORM_ID = str(CONFIG["meta"].get("lead_gen_form_id", ""))
 V = "v19.0"
 
-print("=" * 60)
-print("1. MESSAGE META COMPLET (logs/cron.log : lignes 'Meta API error')")
-print("=" * 60)
-log = ROOT / "logs" / "cron.log"
-if log.exists():
-    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
-    hits = [
-        ln for ln in lines
-        if ("Meta API error" in ln or "error_user" in ln
-            or "développement" in ln or "doit être" in ln
-            or "adcreatives" in ln)
-    ]
-    # Dédoublonne en gardant l'ordre, garde les 8 derniers (sans le token)
-    seen, uniq = set(), []
-    for ln in hits:
-        clean = re.sub(r"access_token=[A-Za-z0-9]+", "access_token=<caché>", ln)
-        key = clean[:300]
-        if key not in seen:
-            seen.add(key)
-            uniq.append(clean)
-    for ln in uniq[-8:]:
-        print(ln[:1200])
-        print("-" * 60)
-    if not uniq:
-        print("Aucune ligne d'erreur Meta trouvée dans cron.log.")
-else:
-    print("Pas de logs/cron.log (les runs manuels loguent peut-être ailleurs).")
+# Reproduit EXACTEMENT object_story_spec de meta_publisher.create_ad_creative,
+# avec un video_id volontairement faux.
+story = {
+    "page_id": PAGE_ID,
+    "video_data": {
+        "video_id": "000000000000000",          # bidon -> aucune vidéo réelle
+        "image_url": "https://via.placeholder.com/720x1280.png",
+        "title": "Diagnostic",
+        "message": "Diagnostic create_ad_creative (aucune pub créée).",
+        "link_description": "Diagnostic",
+        "call_to_action": {
+            "type": "GET_QUOTE",
+            "value": {"lead_gen_form_id": FORM_ID},
+        },
+    },
+}
 
-print("\n" + "=" * 60)
-print("2. FORMULAIRE INSTANTANÉ — statut réel (via Page Access Token)")
 print("=" * 60)
-# Récupère un Page Access Token (le token a pages_read_engagement/manage_ads)
-pt = requests.get(
-    f"https://graph.facebook.com/{V}/{PAGE_ID}",
-    params={"fields": "access_token", "access_token": TOKEN}, timeout=30,
+print(f"POST {ACT_ID}/adcreatives (video_id bidon — 0 dépense)")
+print("=" * 60)
+r = requests.post(
+    f"https://graph.facebook.com/{V}/{ACT_ID}/adcreatives",
+    data={"object_story_spec": json.dumps(story), "access_token": TOKEN},
+    timeout=30,
 )
-page_token = (pt.json() or {}).get("access_token")
-print(f"Page Access Token obtenu : {'oui' if page_token else 'NON -> ' + pt.text[:300]}")
-if page_token and FORM_ID:
-    f = requests.get(
-        f"https://graph.facebook.com/{V}/{FORM_ID}",
-        params={"fields": "id,name,status,locale,leads_count",
-                "access_token": page_token}, timeout=30,
-    )
-    print(f"\nGET form {FORM_ID} -> {f.status_code}")
-    print(json.dumps(f.json(), indent=2, ensure_ascii=False)[:1500])
-    lst = requests.get(
-        f"https://graph.facebook.com/{V}/{PAGE_ID}/leadgen_forms",
-        params={"fields": "id,name,status", "access_token": page_token},
-        timeout=30,
-    )
-    print(f"\nTous les formulaires de la Page -> {lst.status_code}")
-    print(json.dumps(lst.json(), indent=2, ensure_ascii=False)[:2000])
+print("HTTP", r.status_code)
+try:
+    j = r.json()
+    print(json.dumps(j, indent=2, ensure_ascii=False))
+    err = j.get("error", {})
+    print("\n--- RÉSUMÉ ---")
+    print("message      :", err.get("message"))
+    print("type         :", err.get("type"))
+    print("code/subcode :", err.get("code"), "/", err.get("error_subcode"))
+    print("user_title   :", err.get("error_user_title"))
+    print("user_msg     :", err.get("error_user_msg"))
+except Exception:
+    print(r.text[:1500])
 
 print("\n" + "=" * 60)
-print("LECTURE :")
-print(" - Section 1 : le message Meta en entier. Si on lit 'application")
-print("   ... mode développement' => il faut passer l'App en Live.")
-print(" - Section 2 : form.status doit être 'ACTIVE' (pas DRAFT/ARCHIVED).")
+print("INTERPRÉTATION :")
+print(" - 'app ... development mode' / 'doit être publique' (parle de")
+print("   l'application) => passer l'App en LIVE sur developers.facebook.com")
+print(" - 'video ... does not exist/invalid' => App/Page OK, problème vidéo")
+print(" - autre => colle tout, je tranche.")
 print("Colle TOUTE la sortie.")
