@@ -1,10 +1,11 @@
 """
 Diagnostic Meta : pourquoi create_ad_creative renvoie « la Page doit être
-publique ». Vérifie l'état de la Page + la validité/portée du token, sans
-rien publier ni dépenser (lectures API seulement).
+publique ». On sait déjà que la Page est publiée et accessible ; le souci
+est le lien compte-pub <-> Page. Ce script localise les deux assets
+(quel Business possède quoi) pour donner le fix exact. Lectures seules.
 
 Usage (sur le VPS) :
-    cd /root/automatisation && .venv/bin/python tools/check_page.py
+    cd /root/automatisation && git pull && .venv/bin/python tools/check_page.py
 """
 import os
 import json
@@ -33,50 +34,43 @@ def show(title, resp):
         print(resp.text[:1000])
 
 
-# 1. État de la Page (le coeur du diagnostic)
+def get(path, fields):
+    return requests.get(
+        f"https://graph.facebook.com/{V}/{path}",
+        params={"fields": fields, "access_token": TOKEN},
+        timeout=30,
+    )
+
+
+# 1. Le compte pub : dans quel Business vit-il ? Est-il actif ?
+show(
+    f"AD ACCOUNT {ACT_ID}",
+    get(ACT_ID, "name,account_status,disable_reason,business{id,name},"
+                "owner,funding_source,currency"),
+)
+
+# 2. La Page : dans quel Business vit-elle ?
 show(
     f"PAGE {PAGE_ID}",
-    requests.get(
-        f"https://graph.facebook.com/{V}/{PAGE_ID}",
-        params={
-            "fields": "name,is_published,link,verification_status,"
-                      "is_webhooks_subscribed,tasks",
-            "access_token": TOKEN,
-        },
-        timeout=30,
-    ),
+    get(PAGE_ID, "name,is_published,link,verification_status"),
 )
 
-# 2. Le token : portée + à quoi il est rattaché
+# 3. Le Business propriétaire de la Page (via le token System User)
 show(
-    "TOKEN debug",
-    requests.get(
-        f"https://graph.facebook.com/{V}/debug_token",
-        params={"input_token": TOKEN, "access_token": TOKEN},
-        timeout=30,
-    ),
+    "BUSINESSES du System User (/me/businesses)",
+    get("me/businesses", "id,name"),
 )
 
-# 3. Les Pages accessibles par ce token (la Page cible doit y être)
+# 4. Les Pages déjà rattachées au Business du compte pub
+#    (client_pages + owned_pages selon le partage)
 show(
-    "PAGES accessibles (/me/accounts)",
-    requests.get(
-        f"https://graph.facebook.com/{V}/me/accounts",
-        params={"fields": "id,name,is_published,tasks", "access_token": TOKEN},
-        timeout=30,
-    ),
-)
-
-# 4. Le compte pub voit-il la Page comme promouvable ?
-show(
-    f"PROMOTABLE pages du compte {ACT_ID}",
-    requests.get(
-        f"https://graph.facebook.com/{V}/{ACT_ID}/promote_pages",
-        params={"fields": "id,name,is_published", "access_token": TOKEN},
-        timeout=30,
-    ),
+    f"AD ACCOUNT -> assigned pages ({ACT_ID}/assigned_pages)",
+    get(f"{ACT_ID}/assigned_pages", "id,name"),
 )
 
 print("\n" + "=" * 60)
-print("Colle TOUTE cette sortie. Points clés : PAGE.is_published, "
-      "le scopes du TOKEN, et si la Page apparaît dans /me/accounts.")
+print("LECTURE : compare AD ACCOUNT.business.id et le Business de la Page.")
+print("  - s'ils diffèrent (ou si AD ACCOUNT n'a pas de .business) -> il faut")
+print("    rattacher la Page et le compte pub au MÊME Business.")
+print("  - account_status doit valoir 1 (actif). Sinon, compte désactivé.")
+print("Colle TOUTE la sortie.")
