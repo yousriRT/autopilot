@@ -264,3 +264,32 @@ class TestActiveVerticalsFilter:
         # base_config cible fibre, mobile, famille_4lignes
         assert "famille_4lignes" in pilot.verticals
         assert len(pilot.verticals) == 3
+
+    def test_stale_priority_cannot_escape_pilot_scope(
+        self, tmp_path, monkeypatch, base_config
+    ):
+        """Une priorité stale hors active_verticals ne doit JAMAIS être lancée
+        (sinon budget Creatify brûlé hors périmètre pilote)."""
+        cfg = {**base_config, "active_verticals": ["fibre", "mobile"]}
+        pilot = self._pilot(tmp_path, monkeypatch, cfg)
+
+        prio = tmp_path / "data" / "priority_verticals.json"
+        prio.parent.mkdir(parents=True, exist_ok=True)
+        prio.write_text(json.dumps({
+            "priorities": ["famille_4lignes", "fibre"],
+            "set_at": datetime.now().isoformat(),
+        }))
+        pilot.responder.priority_verticals_path = prio
+
+        pilot._preflight = MagicMock(return_value=True)
+        pilot.cost_tracker.is_creation_capped = MagicMock(
+            return_value=(False, {"creation_total_usd": 0.0}))
+        pilot.optimizer.how_many_to_explore = MagicMock(return_value=1)
+        pilot.tracker.get_winning_angles = MagicMock(return_value=[])
+        pilot._create_and_publish_one = MagicMock()
+
+        pilot.launch_new_ads()
+
+        launched = {c.args[0] for c in pilot._create_and_publish_one.call_args_list}
+        assert launched == {"fibre", "mobile"}
+        assert "famille_4lignes" not in launched

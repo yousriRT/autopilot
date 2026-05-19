@@ -173,8 +173,13 @@ class MetaAdsAutoPilot:
             )
             return
 
-        # Verticales prioritaires (anomalie remontée → on les traite d'abord)
-        priority = self.responder.get_priority_verticals()
+        # Verticales prioritaires (anomalie remontée → on les traite d'abord).
+        # IMPORTANT : on ré-applique le filtre active_verticals. Sinon une
+        # priorité stale ou un emergency_relaunch_unlock (qui marque TOUTES
+        # les verticales configurées) ferait sortir le launch du périmètre
+        # pilote et brûlerait du budget Creatify sur des verticales exclues.
+        priority = [v for v in self.responder.get_priority_verticals()
+                    if v in self.verticals]
         ordered_verticals = priority + [v for v in self.verticals if v not in priority]
         if priority:
             log.info(f"Verticales prioritaires (anomalie) : {priority}")

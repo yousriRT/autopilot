@@ -478,8 +478,15 @@ class CreativeGenerator:
             "X-API-KEY": self.creatify_api_key,
             "Content-Type": "application/json",
         }
+        spoken = self._clean_script(brief["video_script"])
+        # Auditabilité : on logue EXACTEMENT ce qui sera prononcé (post-clean),
+        # avec un marqueur greppable dans cron.log pour debug créa a posteriori.
+        log.info(
+            "SCRIPT_PRONONCE [angle=%s persona=%s voice=%s]: %s",
+            brief.get("angle"), persona_id, voice_id, spoken,
+        )
         body = {
-            "text": self._clean_script(brief["video_script"]),
+            "text": spoken,
             "creator": persona_id,
             "accent": voice_id,
             "aspect_ratio": self.creatify_cfg.get("aspect_ratio", "9x16"),
