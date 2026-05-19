@@ -88,9 +88,11 @@ Tout le reste en dépend. Deux options :
 
 ## 6. Mise en production
 
-- [ ] Installer le cron job (voir README) sur la machine/serveur qui tourne 24/7 :
-      - `optimize` toutes les heures
-      - `launch` 1×/jour
+- [x] Hébergement décidé : **VPS 24/7** (état persistant requis pour kill-switch/bandit)
+- [x] Code versionné (git, sans secrets) + scripts de déploiement (`deploy/`)
+- [ ] Créer un **repo GitHub privé** pour le code automation → me donner l'URL
+- [ ] Créer le **VPS** (DigitalOcean Ubuntu, Toronto, ~4 $/mois)
+- [ ] Déployer : cloner + `.env` + `bash deploy/setup_vps.sh` + cron (voir `deploy/DEPLOY.md`)
 - [ ] Vérifier les logs dans `logs/orchestrator_AAAAMMJJ.log`
 - [ ] (Optionnel) Activer le dashboard email quotidien
 

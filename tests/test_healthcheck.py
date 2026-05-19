@@ -104,6 +104,42 @@ class TestRunHealthcheck:
         _, report = run_healthcheck(base_config, claude, publisher, optimizer)
         assert report["status"] in ("OK", "DEGRADED", "CRITICAL")
 
+    def test_heygen_provider_requires_heygen_and_elevenlabs(
+        self, base_config, mock_publisher, monkeypatch
+    ):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+        monkeypatch.setenv("META_ACCESS_TOKEN", "x")
+        monkeypatch.setenv("HEYGEN_API_KEY", "x")
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "x")
+        monkeypatch.delenv("ARCADS_API_KEY", raising=False)
+        cfg = {**base_config, "video_provider": "heygen",
+               "heygen": {"voice_source": "elevenlabs"}}
+        claude = MagicMock()
+        claude.models.list.return_value = iter([MagicMock()])
+        mock_publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
+        _, report = run_healthcheck(cfg, claude, mock_publisher, MagicMock(state={"ads": {}}))
+        # Arcads non requis ; HeyGen + ElevenLabs vérifiés et présents
+        assert "env_ARCADS_API_KEY" not in report["checks"]
+        assert report["checks"]["env_HEYGEN_API_KEY"] == "ok"
+        assert report["checks"]["env_ELEVENLABS_API_KEY"] == "ok"
+        assert not any("ARCADS" in e for e in report["errors"])
+
+    def test_heygen_missing_key_is_critical(
+        self, base_config, mock_publisher, monkeypatch
+    ):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+        monkeypatch.setenv("META_ACCESS_TOKEN", "x")
+        monkeypatch.delenv("HEYGEN_API_KEY", raising=False)
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "x")
+        cfg = {**base_config, "video_provider": "heygen",
+               "heygen": {"voice_source": "elevenlabs"}}
+        claude = MagicMock()
+        claude.models.list.return_value = iter([MagicMock()])
+        mock_publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
+        exit_code, report = run_healthcheck(cfg, claude, mock_publisher, MagicMock(state={"ads": {}}))
+        assert report["checks"]["env_HEYGEN_API_KEY"] == "missing"
+        assert exit_code == HEALTH_CRITICAL
+
     def test_dlq_pending_warns_when_high(self, env_setup, base_config, mock_publisher, tmp_path):
         with patch("resilience.DeadLetterQueue") as mdlq:
             instance = MagicMock()
