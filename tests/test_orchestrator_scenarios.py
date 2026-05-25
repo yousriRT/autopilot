@@ -77,6 +77,10 @@ def isolated_orchestrator(tmp_path, monkeypatch, base_config):
     pilot.dlq.path = tmp_path / "data" / "dead_letter.json"
     pilot.dlq._items = []
 
+    # Validation visuelle de l'image mockée OK par défaut (les scénarios qui
+    # testent le rejet image l'overrident).
+    pilot.validator.validate_image = MagicMock(return_value=(True, []))
+
     return pilot, fake_anthropic
 
 
@@ -248,6 +252,58 @@ class TestSelfHealingMetaPreview:
 
         with pytest.raises(RuntimeError, match="Meta Preview rejeté 2 fois"):
             pilot._create_and_publish_one("fibre", winning_angles=[])
+
+
+# ============================================================
+# SCÉNARIO 3bis : Self-healing sur rejet de l'IMAGE générée
+# ============================================================
+
+class TestSelfHealingImage:
+    def test_image_rejected_then_regen_succeeds(self, isolated_orchestrator):
+        pilot, claude = isolated_orchestrator
+        claude.messages.parse.side_effect = [
+            make_claude_response(make_concept("v1")),
+            make_claude_response(PolicyResult(valid=True)),
+        ]
+        pilot.creative_gen.generate_image = MagicMock(side_effect=[b"bad-img", b"good-img"])
+        # 1re image rejetée (texte incrusté), 2e OK
+        pilot.validator.validate_image = MagicMock(side_effect=[
+            (False, ["Texte visible incrusté"]),
+            (True, []),
+        ])
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.return_value = "img_hash"
+        pilot.publisher.create_ad_creative.return_value = "c_id"
+        pilot.publisher.preview_creative.return_value = {"ok": True, "body": "ok"}
+        pilot.publisher._get_or_create_campaign.return_value = "camp_id"
+        pilot.publisher._create_adset.return_value = "as_id"
+        pilot.publisher._create_ad.return_value = "ad_img"
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
+
+        pilot._create_and_publish_one("famille_bundle", winning_angles=[])
+
+        assert pilot.creative_gen.generate_image.call_count == 2
+        # C'est la 2e image (validée) qui est uploadée
+        assert pilot.publisher.upload_image.call_args.args[0] == b"good-img"
+        assert "ad_img" in pilot.tracker.data["ads"]
+
+    def test_image_rejected_twice_raises(self, isolated_orchestrator):
+        pilot, claude = isolated_orchestrator
+        claude.messages.parse.side_effect = [
+            make_claude_response(make_concept("v1")),
+            make_claude_response(PolicyResult(valid=True)),
+        ]
+        pilot.creative_gen.generate_image = MagicMock(side_effect=[b"bad1", b"bad2"])
+        pilot.validator.validate_image = MagicMock(return_value=(False, ["Logo visible"]))
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
+
+        with pytest.raises(RuntimeError, match="Image rejetée 2 fois"):
+            pilot._create_and_publish_one("famille_bundle", winning_angles=[])
 
 
 # ============================================================

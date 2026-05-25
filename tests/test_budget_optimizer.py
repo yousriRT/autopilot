@@ -96,19 +96,24 @@ class TestGetInitialBudget:
         budget = optimizer.get_initial_budget("fibre")
         assert budget > 0
 
-    def test_uses_active_verticals_count(self, optimizer):
-        # 2 verticales actives
-        optimizer.state["ads"]["a1"] = {"vertical": "fibre", "status": "active"}
-        optimizer.state["ads"]["a2"] = {"vertical": "mobile", "status": "active"}
+    def test_divides_by_configured_verticals(self, optimizer):
+        # base_config a 3 offres configurées : 100*0.20/(3*2)=3.33 → plancher 5.0
         b = optimizer.get_initial_budget("fibre")
-        # exploration = 100 * 0.20 = 20, divisé par 2 vert × 2 ads = 4 → 5
         assert b == pytest.approx(5.0)
 
-    def test_fallback_5_verticals_when_empty(self, optimizer):
-        # Aucune ad active dans le state
+    def test_never_below_min_ad_budget(self, optimizer):
+        # Même sans aucune ad active, jamais sous le plancher Meta
         b = optimizer.get_initial_budget("fibre")
-        # 100 * 0.20 / (5 * 2) = 2.0
-        assert b == pytest.approx(2.0)
+        assert b >= optimizer.MIN_AD_BUDGET
+
+    def test_single_offer_uses_full_exploration_share(self, tmp_path):
+        # Une seule offre configurée → 100*0.20/(1*2)=10.0
+        cfg = {"daily_total_budget": 100.0,
+               "meta": {"targeting": {"famille_bundle": {}}}}
+        o = ThompsonSamplingOptimizer(cfg)
+        o.data_path = tmp_path / "b.json"
+        o.state = {"ads": {}, "verticals": {}}
+        assert o.get_initial_budget("famille_bundle") == pytest.approx(10.0)
 
 
 class TestDecideAllocations:
@@ -190,6 +195,23 @@ class TestDecideAllocations:
         new_budget = decisions["ad_1"].get("new_budget", 20.0)
         # ±50% de 20 = entre 10 et 30
         assert 10.0 <= new_budget <= 30.0
+
+    def test_sum_of_budgets_never_exceeds_vertical_budget(self, optimizer, deterministic_random):
+        """#1 : la somme des budgets alloués ne dépasse JAMAIS le budget de la
+        verticale (sinon Meta surdépense). Cas piège : beaucoup d'ads à budget
+        élevé que le clamp ±50% empêcherait de réduire assez vite."""
+        # 6 ads actives, toutes une seule verticale, budgets actuels élevés (40)
+        for i in range(6):
+            optimizer.state["ads"][f"ad_{i}"] = {
+                "vertical": "fibre", "status": "active",
+                "spend": 10, "quality_weighted_leads": 3.0,
+                "impressions": 500, "daily_budget": 40.0,
+            }
+        decisions = optimizer.decide_allocations("fibre")
+        # budget de la verticale = daily_total_budget (100) / 1 verticale active
+        total = sum(d["new_budget"] for d in decisions.values()
+                    if d["action"] != "pause")
+        assert total <= 100.0 + 1e-6
 
     def test_min_budget_floor_5_euros(self, optimizer, deterministic_random):
         optimizer.state["ads"]["ad_1"] = {

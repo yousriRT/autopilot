@@ -36,6 +36,24 @@ class TestBudgetGuardian:
         # Toutes les ads pausées
         assert mock_publisher.pause_ad.call_count == 3
 
+    def test_account_spend_strengthens_killswitch(self, base_config, mock_publisher, tmp_path):
+        # #5 : somme par ad faible (10) mais dépense COMPTE du jour élevée (200)
+        # → le kill-switch se déclenche quand même.
+        mock_publisher.get_active_ads.return_value = [{"id": "ad_1"}]
+        mock_publisher.get_ad_insights.return_value = {"spend": 10.0}
+        mock_publisher.get_account_spend_today.return_value = 200.0  # > 120
+        g = BudgetGuardian(base_config, mock_publisher, state_path=tmp_path / "g.json")
+        assert g.check_and_enforce() is False
+        assert g.is_killed() is True
+
+    def test_account_spend_error_falls_back_to_per_ad(self, base_config, mock_publisher, tmp_path):
+        mock_publisher.get_active_ads.return_value = [{"id": "ad_1"}]
+        mock_publisher.get_ad_insights.return_value = {"spend": 50.0}
+        mock_publisher.get_account_spend_today.side_effect = Exception("api down")
+        g = BudgetGuardian(base_config, mock_publisher, state_path=tmp_path / "g.json")
+        # 50 < 120 et le compte est indispo → on ne kill pas
+        assert g.check_and_enforce() is True
+
     def test_already_killed_no_op(self, base_config, mock_publisher, tmp_path):
         g = BudgetGuardian(base_config, mock_publisher, state_path=tmp_path / "g.json")
         g.state = {"killed_at": datetime.now().isoformat(), "killed_reason": "test"}

@@ -247,20 +247,25 @@ class MetaPublisher:
         )
         return [a for a in result.get("data", []) if a["status"] == "ACTIVE"]
 
-    def get_ad_insights(self, ad_id: str, last_hours: int = 24) -> dict:
-        """Récupère les perfs récentes d'une ad. Inclut reach pour calcul de frequency."""
-        from datetime import datetime, timedelta
-        since = (datetime.now() - timedelta(hours=last_hours)).strftime("%Y-%m-%d")
-        until = datetime.now().strftime("%Y-%m-%d")
+    def get_ad_insights(self, ad_id: str, last_hours: Optional[int] = 24) -> dict:
+        """
+        Récupère les perfs d'une ad. Inclut reach pour calcul de frequency.
 
-        result = self._request(
-            "GET",
-            f"{ad_id}/insights",
-            params={
-                "fields": "spend,impressions,reach,clicks,actions,cpm,ctr,frequency",
-                "time_range": json.dumps({"since": since, "until": until})
-            }
-        )
+        last_hours=24 (défaut) : fenêtre glissante 24h (fatigue, kill-switch).
+        last_hours=None : perfs CUMULÉES depuis le début (date_preset=maximum),
+        utilisé par le bandit pour estimer un taux de leads/€ cohérent avec les
+        leads pondérés (eux aussi cumulés).
+        """
+        from datetime import datetime, timedelta
+        params = {"fields": "spend,impressions,reach,clicks,actions,cpm,ctr,frequency"}
+        if last_hours is None:
+            params["date_preset"] = "maximum"
+        else:
+            since = (datetime.now() - timedelta(hours=last_hours)).strftime("%Y-%m-%d")
+            until = datetime.now().strftime("%Y-%m-%d")
+            params["time_range"] = json.dumps({"since": since, "until": until})
+
+        result = self._request("GET", f"{ad_id}/insights", params=params)
 
         if not result.get("data"):
             return {"spend": 0, "impressions": 0, "reach": 0, "leads": 0, "clicks": 0, "ctr": 0, "frequency": 0}
@@ -280,6 +285,20 @@ class MetaPublisher:
             "ctr": float(d.get("ctr", 0)),
             "frequency": float(d.get("frequency", 0)),
         }
+
+    def get_account_spend_today(self) -> float:
+        """
+        Dépense totale du COMPTE pub pour la journée en cours (un seul appel).
+        Mesure la plus fiable de l'argent réellement sorti — sert de filet au
+        kill-switch (ne rate aucune dépense, contrairement à la somme par ad
+        qui peut sous-compter si un appel insights échoue)."""
+        result = self._request(
+            "GET",
+            f"{self.ad_account_id}/insights",
+            params={"fields": "spend", "date_preset": "today"}
+        )
+        data = result.get("data") or []
+        return float(data[0].get("spend", 0)) if data else 0.0
 
     def get_ad_leads(self, ad_id: str, last_hours: int = 24, limit: int = 200) -> list:
         """

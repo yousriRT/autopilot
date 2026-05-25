@@ -64,6 +64,41 @@ class TestValidate:
         assert call_kwargs["output_format"] == PolicyResult
 
 
+class TestValidateImage:
+    def test_returns_valid_for_clean_image(self, validator, mock_anthropic_client, sample_creative_brief):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(
+            PolicyResult(valid=True, issues=[])
+        )
+        ok, issues = validator.validate_image(b"PNGDATA", sample_creative_brief)
+        assert ok is True
+        assert issues == []
+
+    def test_flags_text_or_logo(self, validator, mock_anthropic_client, sample_creative_brief):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(
+            PolicyResult(valid=False, issues=["Texte visible incrusté", "Logo reconnaissable"])
+        )
+        ok, issues = validator.validate_image(b"PNGDATA", sample_creative_brief)
+        assert ok is False
+        assert len(issues) == 2
+
+    def test_sends_image_block_to_claude(self, validator, mock_anthropic_client, sample_creative_brief):
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(
+            PolicyResult(valid=True)
+        )
+        validator.validate_image(b"PNGDATA", sample_creative_brief)
+        kwargs = mock_anthropic_client.messages.parse.call_args.kwargs
+        content = kwargs["messages"][0]["content"]
+        assert any(block.get("type") == "image" for block in content)
+        assert kwargs["model"] == "claude-sonnet-4-6"
+
+    def test_records_cost(self, base_config, mock_anthropic_client, sample_creative_brief):
+        ct = MagicMock()
+        v = PolicyValidator(base_config, claude_client=mock_anthropic_client, cost_tracker=ct)
+        mock_anthropic_client.messages.parse.return_value = make_parse_response(PolicyResult(valid=True))
+        v.validate_image(b"PNGDATA", sample_creative_brief)
+        assert ct.record_anthropic.call_args.kwargs.get("purpose") == "image_validate"
+
+
 class TestCostTrackerIntegration:
     def test_records_cost_when_tracker_provided(self, base_config, mock_anthropic_client, sample_creative_brief):
         cost_tracker = MagicMock()

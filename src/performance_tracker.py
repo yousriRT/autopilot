@@ -57,17 +57,19 @@ class PerformanceTracker:
             "angle": angle,
             "initial_budget": initial_budget,
             "created_at": datetime.now().isoformat(),
-            "leads": 0,                     # raw count Meta
-            "quality_weighted_leads": 0.0,  # somme des scores qualité (utilisé par bandit)
-            "spend": 0.0,
+            "leads": 0,                     # raw count Meta (fenêtre récente)
+            "quality_weighted_leads": 0.0,  # somme des scores qualité cumulée (bandit)
+            "spend": 0.0,                   # dépense fenêtre récente (fatigue/dashboard)
+            "spend_lifetime": 0.0,          # dépense cumulée (cohérente avec qwl cumulé)
             "impressions": 0,
             "reach": 0,
             "history": [],
-            "scored_lead_ids": [],          # éviter de double-scorer
+            "scored_lead_ids": [],          # trace bornée (le dédup réel est le lead_store)
         }
         self._save()
 
-    def update_performance(self, ad_id: str, insights: dict, leads_data: Optional[list] = None):
+    def update_performance(self, ad_id: str, insights: dict, leads_data: Optional[list] = None,
+                           lifetime_spend: Optional[float] = None):
         """
         Met à jour les insights agrégés ET, si fournis, score les nouveaux leads
         pour mettre à jour quality_weighted_leads.
@@ -75,18 +77,24 @@ class PerformanceTracker:
         Args:
             ad_id: ID Meta de l'ad
             insights: dict des perfs (spend, impressions, reach, clicks, leads, ctr, frequency)
+                      sur la fenêtre récente (24h) — utilisé pour fatigue/dashboard.
             leads_data: liste optionnelle des leads bruts Meta à scorer (format Lead Ads API).
                         Si None, le scoring est sauté (le bandit utilisera le fallback raw).
+            lifetime_spend: dépense CUMULÉE depuis le début de l'ad. Sert au calcul
+                            du CPL qualifié (cohérent avec quality_weighted_leads cumulé).
+                            Si None, on retombe sur la dépense de la fenêtre récente.
         """
         if ad_id not in self.data["ads"]:
             return
         ad = self.data["ads"][ad_id]
 
-        # Insights cumulatifs (Meta renvoie déjà cumulé sur la fenêtre)
+        # Insights de la fenêtre récente (fatigue, dashboard)
         ad["leads"] = insights.get("leads", ad.get("leads", 0))
         ad["spend"] = insights.get("spend", ad.get("spend", 0))
         ad["impressions"] = insights.get("impressions", ad.get("impressions", 0))
         ad["reach"] = insights.get("reach", ad.get("reach", 0))
+        # Dépense cumulée (même base temporelle que les leads pondérés cumulés)
+        ad["spend_lifetime"] = float(lifetime_spend) if lifetime_spend is not None else ad["spend"]
 
         # Snapshot historique pour le calcul de momentum CTR
         ad["history"].append({
@@ -95,26 +103,29 @@ class PerformanceTracker:
         })
         ad["history"] = ad["history"][-100:]  # plafond mémoire
 
-        # Scoring qualité — incrémental (on ne re-score pas un lead déjà vu)
-        # ET persistance dans le lead_store (CRM-substitute).
+        # Scoring qualité — la déduplication s'appuie sur le lead_store, qui est
+        # PERSISTANT et idempotent sur lead_id. On ne compte un lead que si le
+        # store confirme qu'il est nouveau → plus de double comptage (le bug du
+        # cap à 500 de scored_lead_ids est éliminé).
         if leads_data:
             new_score_total = 0.0
             new_count = 0
             for lead in leads_data:
                 lead_id = lead.get("id")
-                if not lead_id or lead_id in ad["scored_lead_ids"]:
+                if not lead_id:
                     continue
                 s = self.lead_scorer.score(lead)
-                new_score_total += s
-                new_count += 1
-                ad["scored_lead_ids"].append(lead_id)
-                # Persiste dans le store local (idempotent sur lead_id)
-                self.lead_store.add(
+                is_new = self.lead_store.add(
                     lead_data=lead,
                     ad_id=ad_id,
                     vertical=ad.get("vertical", "?"),
                     quality_score=s,
                 )
+                if not is_new:
+                    continue  # déjà compté lors d'un cycle précédent
+                new_score_total += s
+                new_count += 1
+                ad["scored_lead_ids"].append(lead_id)
                 # Push vers CRM Supabase (idempotent côté DB via UNIQUE constraint)
                 if self.supabase_pusher is not None:
                     self.supabase_pusher.push(
@@ -128,7 +139,8 @@ class PerformanceTracker:
                 log.info(
                     f"[{ad_id}] +{new_count} leads scorés, qualité moy {new_score_total/new_count:.2f}"
                 )
-            ad["scored_lead_ids"] = ad["scored_lead_ids"][-500:]
+            # Trace bornée seulement (le dédup réel est dans le lead_store)
+            ad["scored_lead_ids"] = ad["scored_lead_ids"][-1000:]
 
         self._save()
 
@@ -177,7 +189,9 @@ class PerformanceTracker:
             quality_leads = self.get_quality_weighted_leads(ad_id)
             if quality_leads < 3:  # min 3 leads pondérés pour considérer
                 continue
-            cpl = ad["spend"] / quality_leads
+            # CPL cohérent : dépense CUMULÉE / leads pondérés CUMULÉS (même fenêtre)
+            spend_lifetime = ad.get("spend_lifetime", ad.get("spend", 0))
+            cpl = spend_lifetime / quality_leads
             candidates.append({
                 "angle": ad["angle"],
                 "cpl_qualifie": cpl,

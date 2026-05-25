@@ -99,11 +99,19 @@ class TestUpdatePerformance:
         tracker.update_performance("ad_1", {"leads": 1}, leads_data=leads)
         assert tracker.data["ads"]["ad_1"]["quality_weighted_leads"] == first_qwl
 
-    def test_scored_lead_ids_capped_at_500(self, tracker):
+    def test_no_double_count_beyond_500_leads(self, tracker):
+        """#7 : au-delà de 500 leads, le dédup persistant (lead_store) empêche
+        tout double comptage, même si la trace en mémoire est tronquée."""
         tracker.register_ad("ad_1", "fibre", "x", 10.0)
         leads = [fake_meta_lead(f"L_{i}") for i in range(600)]
         tracker.update_performance("ad_1", {"leads": 600}, leads_data=leads)
-        assert len(tracker.data["ads"]["ad_1"]["scored_lead_ids"]) == 500
+        qwl_after_first = tracker.data["ads"]["ad_1"]["quality_weighted_leads"]
+        assert qwl_after_first > 0
+        # Rejouer les 100 premiers (dont les IDs sont sortis de la trace bornée)
+        # ne doit PAS regonfler le score.
+        tracker.update_performance("ad_1", {"leads": 100},
+                                   leads_data=leads[:100])
+        assert tracker.data["ads"]["ad_1"]["quality_weighted_leads"] == qwl_after_first
 
 
 class TestGetQualityWeightedLeads:
@@ -156,6 +164,20 @@ class TestWinningAngles:
         # good_angle doit ressortir (CPL plus bas après pondération qualité)
         good_in_winners = any("good_angle" in w for w in winners)
         assert good_in_winners
+
+    def test_winning_angles_use_lifetime_spend(self, tracker):
+        """#2 : le CPL des winning angles utilise la dépense CUMULÉE, pas la
+        fenêtre 24h (sinon une vieille ad paraît artificiellement rentable)."""
+        tracker.register_ad("ad_1", "fibre", "angle_x", 10.0)
+        good_leads = [fake_meta_lead(f"GL_{i}") for i in range(10)]
+        # spend récent 5 (24h) mais spend cumulé 500 → CPL réel élevé
+        tracker.update_performance("ad_1", {"spend": 5, "leads": 10},
+                                   leads_data=good_leads, lifetime_spend=500.0)
+        qwl = tracker.get_quality_weighted_leads("ad_1")
+        winners = tracker.get_winning_angles("fibre", last_n_days=14)
+        # Le CPL doit refléter la dépense cumulée (500), pas la fenêtre 24h (5)
+        assert winners
+        assert f"{500.0 / qwl:.2f}" in winners[0]
 
     def test_excludes_old_ads(self, tracker):
         tracker.register_ad("old_ad", "fibre", "old_angle", 10.0)

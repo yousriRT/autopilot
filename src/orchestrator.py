@@ -209,6 +209,29 @@ class MetaAdsAutoPilot:
         if priority:
             self.responder.clear_priorities()
 
+    def _validate_or_regen_image(self, vertical: str, creative_brief: dict,
+                                 image_bytes: bytes) -> bytes:
+        """Valide l'image générée (vision Claude). Si rejet, régénère UNE fois
+        avec les corrections, puis re-valide. Lève si toujours rejetée."""
+        img_ok, img_issues = self.validator.validate_image(image_bytes, creative_brief)
+        if img_ok:
+            return image_bytes
+        log.warning(f"[{vertical}] Image rejetée : {img_issues}")
+        image_bytes = self.creative_gen.generate_image(
+            creative_brief,
+            extra_instructions=(
+                "Corrige : " + "; ".join(img_issues)
+                + ". Aucun texte, mot, chiffre ni logo dans l'image ; "
+                "pas de mineur en sujet principal ; photo réaliste et crédible."
+            ),
+        )
+        img_ok, img_issues = self.validator.validate_image(image_bytes, creative_brief)
+        if not img_ok:
+            raise RuntimeError(
+                f"[{vertical}] Image rejetée 2 fois par la validation visuelle : {img_issues}"
+            )
+        return image_bytes
+
     def _create_and_publish_one(self, vertical: str, winning_angles: list):
         """Pipeline complet pour une créa. Self-healing sur rejets."""
 
@@ -238,6 +261,10 @@ class MetaAdsAutoPilot:
         log.info(f"[{vertical}] Génération image ({self.creative_gen.image_provider})...")
         image_bytes = self.creative_gen.generate_image(creative_brief)
 
+        # 4b. Validation de l'image générée (texte incrusté, logo, mineur, artefacts)
+        #     AVANT de dépenser quoi que ce soit. Self-healing : 1 régénération.
+        image_bytes = self._validate_or_regen_image(vertical, creative_brief, image_bytes)
+
         # 5. Upload + create_creative pour preview Meta
         log.info(f"[{vertical}] Upload image + creative pour preview...")
         image_hash = self.publisher.upload_image(image_bytes)
@@ -258,8 +285,9 @@ class MetaAdsAutoPilot:
                 issues=[f"Meta a rejeté l'aperçu : {preview['body'][:300]}"],
                 source="meta_preview",
             )
-            # On re-génère l'image (la créa a changé)
+            # On re-génère l'image (la créa a changé) + on la re-valide
             image_bytes = self.creative_gen.generate_image(creative_brief)
+            image_bytes = self._validate_or_regen_image(vertical, creative_brief, image_bytes)
             image_hash = self.publisher.upload_image(image_bytes)
             creative_id = self.publisher.create_ad_creative(
                 image_hash,
@@ -339,10 +367,16 @@ class MetaAdsAutoPilot:
         for ad in active_ads:
             try:
                 insights = self.publisher.get_ad_insights(ad["id"], last_hours=24)
+                # Perfs cumulées (depuis le début de l'ad) pour le bandit : même
+                # base temporelle que les leads pondérés cumulés → CPL cohérent.
+                lifetime = self.publisher.get_ad_insights(ad["id"], last_hours=None)
                 leads_data = self.publisher.get_ad_leads(ad["id"], last_hours=24)
-                self.tracker.update_performance(ad["id"], insights, leads_data=leads_data)
+                self.tracker.update_performance(
+                    ad["id"], insights, leads_data=leads_data,
+                    lifetime_spend=lifetime.get("spend", 0.0),
+                )
                 qwl = self.tracker.get_quality_weighted_leads(ad["id"])
-                self.optimizer.update_from_insights(ad["id"], insights, quality_weighted_leads=qwl)
+                self.optimizer.update_from_insights(ad["id"], lifetime, quality_weighted_leads=qwl)
             except Exception as e:
                 log.warning(f"Skip insights {ad['id']}: {e}")
                 self.dlq.add(operation="get_insights", payload={"ad_id": ad["id"]}, error=str(e))

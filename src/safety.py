@@ -115,6 +115,20 @@ class BudgetGuardian:
                 log.warning(f"BudgetGuardian: skip insights {ad['id']}: {e}")
                 continue
 
+        # Filet supplémentaire : la dépense compte du jour (un seul appel, ne rate
+        # rien). On prend le MAX — ça ne peut que RENFORCER le kill-switch, jamais
+        # l'affaiblir. Optionnel : si l'appel échoue, on garde la somme par ad.
+        try:
+            account_spend = float(self.publisher.get_account_spend_today())
+            if account_spend > total_spend:
+                log.info(
+                    f"BudgetGuardian: dépense compte/jour {account_spend:.2f} "
+                    f"> somme par ad {total_spend:.2f} — on retient la plus haute."
+                )
+                total_spend = account_spend
+        except Exception as e:
+            log.warning(f"BudgetGuardian: dépense compte indisponible ({e}), somme par ad conservée.")
+
         hard_cap = self.daily_cap * HARD_CAP_MULTIPLIER
         log.info(f"BudgetGuardian: spend 24h = {total_spend:.2f}€ / cap dur = {hard_cap:.2f}€")
 

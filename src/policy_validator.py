@@ -15,6 +15,7 @@ la rigueur sur les cas borderline.
 
 import os
 import json
+import base64
 import logging
 import anthropic
 from pydantic import BaseModel
@@ -26,6 +27,19 @@ log = logging.getLogger(__name__)
 class PolicyResult(BaseModel):
     valid: bool
     issues: list[str] = []
+
+
+IMAGE_VALIDATION_SYSTEM = """Tu inspectes une IMAGE publicitaire générée par IA pour une offre télécom (forfait famille 4 lignes + TV + internet) au Québec, avant diffusion sur Meta.
+
+Mets valid=false et liste les problèmes si l'image présente l'UN de ces défauts :
+- Texte, mots, chiffres, sous-titres ou watermark VISIBLES dans l'image (les modèles rendent mal le texte et Meta pénalise) — même partiellement lisibles ou déformés.
+- Logo, marque, slogan reconnaissable (télécom ou autre).
+- Visage/personne manifestement déformé, mains à 6 doigts, artefacts grossiers d'IA qui rendent l'image non crédible.
+- Un mineur (enfant) comme sujet principal/identifiable.
+- Contenu hors-sujet, choquant, trompeur, ou sans rapport avec une offre famille télécom.
+
+Si l'image est une photo lifestyle crédible, sans texte ni logo, en rapport avec l'offre → valid=true.
+Sois précis dans chaque issue."""
 
 
 VALIDATION_SYSTEM = """Tu es un reviewer interne Meta Ads Policy. Sois STRICT.
@@ -78,5 +92,43 @@ class PolicyValidator:
         )
         if self.cost_tracker:
             self.cost_tracker.record_anthropic("claude-sonnet-4-6", response.usage, purpose="policy_validate")
+        result = response.parsed_output
+        return result.valid, result.issues
+
+    def validate_image(self, image_bytes: bytes, brief: dict,
+                       media_type: str = "image/png") -> tuple[bool, list]:
+        """
+        Inspecte l'IMAGE réellement générée (texte incrusté, logo, mineur,
+        artefacts, hors-sujet) via Claude vision, AVANT de dépenser du budget.
+        Retourne (is_valid, list_of_issues).
+        """
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        response = self.claude.messages.parse(
+            model="claude-sonnet-4-6",
+            max_tokens=512,
+            system=[
+                {
+                    "type": "text",
+                    "text": IMAGE_VALIDATION_SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": b64},
+                    },
+                    {
+                        "type": "text",
+                        "text": f"Inspecte cette image. Angle visé : {brief.get('angle', '')}.",
+                    },
+                ],
+            }],
+            output_format=PolicyResult,
+        )
+        if self.cost_tracker:
+            self.cost_tracker.record_anthropic("claude-sonnet-4-6", response.usage, purpose="image_validate")
         result = response.parsed_output
         return result.valid, result.issues

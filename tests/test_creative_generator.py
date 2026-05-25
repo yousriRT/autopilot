@@ -177,6 +177,16 @@ class TestGenerateImage:
         with pytest.raises(RuntimeError, match="image_prompt manquant"):
             gen.generate_image({"angle": "a"})
 
+    def test_extra_instructions_appended_to_prompt(self, gen):
+        with patch("creative_generator.requests") as mock_req:
+            mock_req.post.return_value = _ok_image_response()
+            mock_req.RequestException = Exception
+            gen.generate_image({"image_prompt": "base prompt", "angle": "a"},
+                               extra_instructions="aucun texte ni logo")
+        sent_prompt = mock_req.post.call_args.kwargs["json"]["prompt"]
+        assert "base prompt" in sent_prompt
+        assert "aucun texte ni logo" in sent_prompt
+
     def test_unexpected_response_raises(self, gen):
         with patch("creative_generator.requests") as mock_req:
             mock_req.post.return_value = MagicMock(

@@ -194,6 +194,37 @@ class TestGetAdInsights:
             assert insights["leads"] == 0
             assert insights["reach"] == 0
 
+    def test_lifetime_uses_date_preset_maximum(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"data": [{"spend": "500.0", "impressions": "20000"}]}
+            insights = publisher.get_ad_insights("ad_1", last_hours=None)
+            params = mreq.call_args.kwargs["params"]
+            assert params["date_preset"] == "maximum"
+            assert "time_range" not in params
+            assert insights["spend"] == 500.0
+
+    def test_recent_window_uses_time_range(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"data": [{"spend": "10"}]}
+            publisher.get_ad_insights("ad_1", last_hours=24)
+            params = mreq.call_args.kwargs["params"]
+            assert "time_range" in params
+            assert "date_preset" not in params
+
+
+class TestAccountSpendToday:
+    def test_returns_account_spend(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"data": [{"spend": "123.45"}]}
+            assert publisher.get_account_spend_today() == pytest.approx(123.45)
+            params = mreq.call_args.kwargs["params"]
+            assert params["date_preset"] == "today"
+
+    def test_no_data_returns_zero(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"data": []}
+            assert publisher.get_account_spend_today() == 0.0
+
 
 class TestGetAdLeads:
     def test_returns_leads(self, publisher):

@@ -218,16 +218,18 @@ class CreativeGenerator:
             )
         return self._normalize_lengths(response.parsed_output.model_dump())
 
-    def generate_image(self, brief: dict) -> bytes:
+    def generate_image(self, brief: dict, extra_instructions: str = "") -> bytes:
         """
         Génère l'image publicitaire à partir du `image_prompt` du brief.
+        `extra_instructions` (optionnel) est ajouté au prompt — sert à corriger
+        l'image après un rejet (ex: « pas de texte, pas de logo »).
         Retourne les octets bruts de l'image (PNG).
         """
         if self.image_provider == "openai":
-            return self._generate_openai(brief)
+            return self._generate_openai(brief, extra_instructions)
         raise ValueError(f"Provider image inconnu: {self.image_provider}")
 
-    def _generate_openai(self, brief: dict) -> bytes:
+    def _generate_openai(self, brief: dict, extra_instructions: str = "") -> bytes:
         """
         API OpenAI Images (gpt-image-1). Retourne les octets de l'image.
         Doc: https://platform.openai.com/docs/api-reference/images/create
@@ -240,6 +242,8 @@ class CreativeGenerator:
         prompt = (brief.get("image_prompt") or "").strip()
         if not prompt:
             raise RuntimeError("image_prompt manquant dans le brief — impossible de générer l'image.")
+        if extra_instructions:
+            prompt = f"{prompt}\n\nIMPORTANT: {extra_instructions}"
 
         model = self.openai_cfg.get("model", "gpt-image-1")
         size = self.openai_cfg.get("size", "1024x1024")

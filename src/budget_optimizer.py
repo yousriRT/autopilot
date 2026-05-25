@@ -19,6 +19,7 @@ Référence : Thompson Sampling pour bandits stochastiques (Russo et al. 2018)
 """
 
 import json
+import math
 import logging
 import numpy as np
 from pathlib import Path
@@ -48,6 +49,9 @@ class ThompsonSamplingOptimizer:
 
     # Combien d'ads max actives par verticale (évite de saupoudrer)
     MAX_ACTIVE_ADS_PER_VERTICAL = 8
+
+    # Budget minimum par ad (plancher Meta + cohérence des décisions)
+    MIN_AD_BUDGET = 5.0
 
     # Combien on garde "en exploration" en permanence (évite de figer)
     MIN_EXPLORATION_BUDGET_RATIO = 0.20
@@ -130,17 +134,22 @@ class ThompsonSamplingOptimizer:
         """
         Budget de départ pour une nouvelle ad.
 
-        On part avec une part du total alloué à l'exploration, divisé par
-        le nombre de verticales actives observées dans le state × ~2 ads d'expé.
-        Évite le hardcoding du nombre de verticales.
+        Part d'exploration du budget total, divisée par le nombre d'offres
+        CONFIGURÉES (pas un fallback hardcodé), × ~2 ads d'expé. Toujours
+        ≥ MIN_AD_BUDGET pour ne pas tomber sous le minimum Meta.
         """
         exploration_budget = self.daily_total_budget * self.MIN_EXPLORATION_BUDGET_RATIO
-        active_verticals = {
-            a.get("vertical") for a in self.state["ads"].values()
-            if a.get("status") == "active" and a.get("vertical")
-        }
-        n_verticals = max(1, len(active_verticals)) if active_verticals else 5  # fallback 5
-        return round(exploration_budget / (n_verticals * 2), 2)
+        configured = self.config.get("meta", {}).get("targeting", {})
+        if configured:
+            n_verticals = max(1, len(configured))
+        else:
+            active_verticals = {
+                a.get("vertical") for a in self.state["ads"].values()
+                if a.get("status") == "active" and a.get("vertical")
+            }
+            n_verticals = max(1, len(active_verticals))
+        raw = exploration_budget / (n_verticals * 2)
+        return round(max(self.MIN_AD_BUDGET, raw), 2)
 
     def decide_allocations(
         self,
@@ -192,14 +201,16 @@ class ThompsonSamplingOptimizer:
         # Étape 1 : sample Thompson sur leads pondérés qualité
         samples = {ad_id: self._sample_quality(ad_id) for ad_id in ads}
 
-        # Étape 2 : softmax → proportions de budget
+        # Étape 2 : softmax → proportions de budget (dict keyé par ad_id)
         temperature = 2.0
-        sample_array = np.array(list(samples.values()))
+        ad_ids = list(ads.keys())
+        sample_array = np.array([samples[a] for a in ad_ids])
         scaled = sample_array * temperature * 100
         exp = np.exp(scaled - scaled.max())
-        proportions = exp / exp.sum()
+        props = exp / exp.sum()
+        proportions = {a: float(p) for a, p in zip(ad_ids, props)}
 
-        # Étape 3 : budget par verticale = budget total / nombre de verticales actives en state
+        # Étape 3 : budget de cette verticale = budget total / nb verticales actives
         active_verticals = {
             a.get("vertical") for a in self.state["ads"].values()
             if a.get("status") == "active" and a.get("vertical")
@@ -207,16 +218,18 @@ class ThompsonSamplingOptimizer:
         n_verticals = max(1, len(active_verticals))
         budget_for_vertical = self.daily_total_budget / n_verticals
 
-        for i, (ad_id, ad) in enumerate(ads.items()):
+        def _qwl(ad):
+            q = ad.get("quality_weighted_leads")
+            return q if q is not None else ad.get("leads", 0) * 0.6
+
+        # Étape 4 : pauses (retire les ads concernées du pool d'allocation)
+        survivors = {}
+        for ad_id, ad in ads.items():
             spend = ad.get("spend", 0)
-            qwl = ad.get("quality_weighted_leads")
-            if qwl is None:
-                qwl = ad.get("leads", 0) * 0.6
+            qwl = _qwl(ad)
             impressions = ad.get("impressions", 0)
-            current_budget = ad.get("daily_budget", 25.0)
             cpl_qualifie = (spend / qwl) if qwl > 0 else float("inf")
 
-            # Pause : spend significatif sans aucun lead qualifié
             if spend >= self.MIN_SPEND_BEFORE_PAUSE * 2 and qwl < 0.5:
                 decisions[ad_id] = {
                     "action": "pause",
@@ -225,10 +238,9 @@ class ThompsonSamplingOptimizer:
                 }
                 continue
 
-            # Pause : sample très bas vs les autres
             if (spend > self.MIN_SPEND_BEFORE_PAUSE
                 and impressions > self.MIN_IMPRESSIONS_BEFORE_DECISION
-                and proportions[i] < 0.05
+                and proportions[ad_id] < 0.05
                 and len(ads) > 3):
                 decisions[ad_id] = {
                     "action": "pause",
@@ -237,13 +249,40 @@ class ThompsonSamplingOptimizer:
                 }
                 continue
 
-            new_budget = round(proportions[i] * budget_for_vertical, 2)
+            survivors[ad_id] = ad
+
+        if not survivors:
+            return decisions
+
+        # Étape 5 : budgets cibles bornés par ad (±50%/cycle, plancher MIN_AD_BUDGET)
+        surv_prop_sum = sum(proportions[a] for a in survivors) or 1.0
+        clamped = {}
+        for ad_id, ad in survivors.items():
+            current_budget = ad.get("daily_budget", self.MIN_AD_BUDGET)
+            target = (proportions[ad_id] / surv_prop_sum) * budget_for_vertical
             max_change = current_budget * 0.5
-            new_budget = max(
-                current_budget - max_change,
-                min(current_budget + max_change, new_budget)
-            )
-            new_budget = max(5.0, new_budget)
+            nb = max(current_budget - max_change,
+                     min(current_budget + max_change, target))
+            clamped[ad_id] = max(self.MIN_AD_BUDGET, nb)
+
+        # Étape 6 : GARANTIE anti-surdépense — la somme des budgets ne dépasse
+        # jamais le budget de la verticale (sinon Meta dépenserait > plafond).
+        total = sum(clamped.values())
+        if total > budget_for_vertical:
+            factor = budget_for_vertical / total
+            # Troncature au centime (jamais round-up) pour que la somme reste
+            # garantie ≤ budget malgré l'arrondi.
+            clamped = {a: math.floor(v * factor * 100) / 100 for a, v in clamped.items()}
+        else:
+            clamped = {a: round(v, 2) for a, v in clamped.items()}
+
+        # Étape 7 : action scale / reduce / hold
+        for ad_id, ad in survivors.items():
+            current_budget = ad.get("daily_budget", self.MIN_AD_BUDGET)
+            new_budget = clamped[ad_id]
+            spend = ad.get("spend", 0)
+            qwl = _qwl(ad)
+            cpl_qualifie = (spend / qwl) if qwl > 0 else float("inf")
 
             if new_budget > current_budget * 1.1:
                 action = "scale"
@@ -257,7 +296,7 @@ class ThompsonSamplingOptimizer:
                 "new_budget": new_budget,
                 "cpl_qualifie": cpl_qualifie,
                 "thompson_sample": samples[ad_id],
-                "budget_share": float(proportions[i]),
+                "budget_share": proportions[ad_id],
             }
 
         return decisions
