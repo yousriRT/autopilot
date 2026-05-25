@@ -34,35 +34,35 @@
     "pixel_id": "",
     "_comment_pixel": "Optionnel : non requis avec un formulaire instantané (l'optimisation se fait via la Page, pas le pixel).",
 
-    "_comment_targeting": "Ajuste selon ta zone et ton profil client. Le ciblage par verticale.",
+    "_comment_targeting": "Ciblage par verticale, restreint à la PROVINCE DE QUÉBEC (region key Meta 1024). Ne pas remettre 'countries:[CA]' sinon Meta élargit à tout le Canada (union).",
     "targeting": {
       "fibre": {
-        "geo_locations": {"countries": ["CA"], "regions": [{"key": "1024"}]},
+        "geo_locations": {"regions": [{"key": "1024", "name": "Quebec"}]},
         "age_min": 30,
         "age_max": 65,
         "interests": [{"id": "6003020834693", "name": "Internet"}]
       },
       "mobile": {
-        "geo_locations": {"countries": ["CA"]},
+        "geo_locations": {"regions": [{"key": "1024", "name": "Quebec"}]},
         "age_min": 25,
         "age_max": 60,
         "interests": [{"id": "6003331697616", "name": "Mobile phones"}]
       },
       "tv": {
-        "geo_locations": {"countries": ["CA"]},
+        "geo_locations": {"regions": [{"key": "1024", "name": "Quebec"}]},
         "age_min": 35,
         "age_max": 70,
         "interests": [{"id": "6003156666873", "name": "Television"}]
       },
       "securite": {
-        "geo_locations": {"countries": ["CA"]},
+        "geo_locations": {"regions": [{"key": "1024", "name": "Quebec"}]},
         "age_min": 35,
         "age_max": 70,
         "interests": [{"id": "6003254307668", "name": "Home security"}]
       },
       "famille_4lignes": {
         "_comment": "Parents 35-55 avec ados 13-19, ciblés pour forfait mobile 4 lignes",
-        "geo_locations": {"countries": ["CA"]},
+        "geo_locations": {"regions": [{"key": "1024", "name": "Quebec"}]},
         "age_min": 35,
         "age_max": 55,
         "interests": [
