@@ -284,70 +284,17 @@ class TestPublishAdFlow:
             assert result["image_hash"] == "img_1"
 
 
-@pytest.fixture
-def paused_config(base_config):
-    base_config["meta"]["launch_paused"] = True
-    return base_config
+class TestLaunchStatus:
+    """Les ads sortent directement en ACTIVE (pas de mode supervisé/pause)."""
 
-
-@pytest.fixture
-def paused_publisher(paused_config):
-    return MetaPublisher(paused_config)
-
-
-class TestLaunchPaused:
-    def test_default_is_active(self, publisher):
-        assert publisher.launch_paused is False
-
-    def test_flag_read_from_config(self, paused_publisher):
-        assert paused_publisher.launch_paused is True
-
-    def test_adset_created_paused(self, paused_publisher):
-        with patch.object(paused_publisher, "_request") as mreq:
-            mreq.return_value = {"id": "adset_1"}
-            paused_publisher._create_adset("camp_1", "fibre", 10.0)
-            assert mreq.call_args.kwargs["data"]["status"] == "PAUSED"
-
-    def test_ad_created_paused(self, paused_publisher):
-        with patch.object(paused_publisher, "_request") as mreq:
-            mreq.return_value = {"id": "ad_1"}
-            paused_publisher._create_ad("adset_1", "creative_1", "fibre")
-            assert mreq.call_args.kwargs["data"]["status"] == "PAUSED"
-
-    def test_adset_active_when_flag_off(self, publisher):
+    def test_adset_created_active(self, publisher):
         with patch.object(publisher, "_request") as mreq:
             mreq.return_value = {"id": "adset_1"}
             publisher._create_adset("camp_1", "fibre", 10.0)
             assert mreq.call_args.kwargs["data"]["status"] == "ACTIVE"
 
-
-class TestActivateAutopilot:
-    def test_activates_only_paused(self, publisher):
+    def test_ad_created_active(self, publisher):
         with patch.object(publisher, "_request") as mreq:
-            mreq.side_effect = [
-                {"data": [  # adsets list
-                    {"id": "s1", "name": "AUTOPILOT_fibre_1", "status": "PAUSED"},
-                    {"id": "s2", "name": "AUTOPILOT_fibre_2", "status": "ACTIVE"},
-                ]},
-                {},  # activate s1
-                {"data": [  # ads list
-                    {"id": "a1", "name": "AUTOPILOT_AD_fibre_1", "status": "PAUSED"},
-                ]},
-                {},  # activate a1
-            ]
-            res = publisher.activate_autopilot()
-            assert res == {"adsets_activated": 1, "ads_activated": 1}
-            posts = [c for c in mreq.call_args_list
-                     if c.args[0] == "POST"]
-            assert all(c.kwargs["data"] == {"status": "ACTIVE"} for c in posts)
-            activated_ids = {c.args[1] for c in posts}
-            assert activated_ids == {"s1", "a1"}
-
-    def test_noop_when_nothing_paused(self, publisher):
-        with patch.object(publisher, "_request") as mreq:
-            mreq.side_effect = [
-                {"data": [{"id": "s1", "name": "AUTOPILOT_x", "status": "ACTIVE"}]},
-                {"data": [{"id": "a1", "name": "AUTOPILOT_AD_x", "status": "ACTIVE"}]},
-            ]
-            res = publisher.activate_autopilot()
-            assert res == {"adsets_activated": 0, "ads_activated": 0}
+            mreq.return_value = {"id": "ad_1"}
+            publisher._create_ad("adset_1", "creative_1", "fibre")
+            assert mreq.call_args.kwargs["data"]["status"] == "ACTIVE"

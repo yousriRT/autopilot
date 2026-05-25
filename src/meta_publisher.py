@@ -36,10 +36,6 @@ class MetaPublisher:
         # Pixel optionnel : inutilisé avec un formulaire instantané (l'optimisation
         # LEAD_GENERATION se fait via la Page). Conservé si présent.
         self.pixel_id = config["meta"].get("pixel_id") or None
-        # Mode supervisé : si True, les ad sets + ads sont créés en PAUSED.
-        # Aucun budget ne sort tant qu'on n'a pas appelé activate_autopilot().
-        # Sert à valider les vraies vidéos publiées avant de dépenser.
-        self.launch_paused = bool(config["meta"].get("launch_paused", False))
 
         # Mapping verticale → audience/ciblage
         self.targeting_by_vertical = config["meta"]["targeting"]
@@ -217,7 +213,7 @@ class MetaPublisher:
                 "optimization_goal": "LEAD_GENERATION",
                 "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
                 "targeting": json.dumps(targeting),
-                "status": "PAUSED" if self.launch_paused else "ACTIVE",
+                "status": "ACTIVE",
                 "promoted_object": json.dumps({"page_id": self.page_id})
             }
         )
@@ -231,7 +227,7 @@ class MetaPublisher:
                 "name": f"AUTOPILOT_AD_{vertical}_{int(time.time())}",
                 "adset_id": adset_id,
                 "creative": json.dumps({"creative_id": creative_id}),
-                "status": "PAUSED" if self.launch_paused else "ACTIVE"
+                "status": "ACTIVE"
             }
         )
         return result["id"]
@@ -330,48 +326,6 @@ class MetaPublisher:
     def pause_ad(self, ad_id: str):
         self._request("POST", ad_id, data={"status": "PAUSED"})
         log.info(f"Ad pausée: {ad_id}")
-
-    def activate_autopilot(self) -> dict:
-        """
-        Passe en ACTIVE tous les ad sets + ads AUTOPILOT actuellement en PAUSED.
-        Utilisé après un launch supervisé (launch_paused=True) : on valide les
-        vraies vidéos publiées dans Meta, puis on déclenche la diffusion ici.
-        Retourne {adsets_activated, ads_activated}.
-        """
-        adsets = self._request(
-            "GET",
-            f"{self.ad_account_id}/adsets",
-            params={
-                "fields": "id,name,status",
-                "filtering": '[{"field":"name","operator":"CONTAIN","value":"AUTOPILOT"}]',
-                "limit": 200,
-            },
-        )
-        n_adsets = 0
-        for s in adsets.get("data", []):
-            if s.get("status") == "PAUSED":
-                self._request("POST", s["id"], data={"status": "ACTIVE"})
-                log.info(f"Ad set activé: {s['id']} ({s.get('name')})")
-                n_adsets += 1
-
-        ads = self._request(
-            "GET",
-            f"{self.ad_account_id}/ads",
-            params={
-                "fields": "id,name,status",
-                "filtering": '[{"field":"name","operator":"CONTAIN","value":"AUTOPILOT_AD"}]',
-                "limit": 200,
-            },
-        )
-        n_ads = 0
-        for a in ads.get("data", []):
-            if a.get("status") == "PAUSED":
-                self._request("POST", a["id"], data={"status": "ACTIVE"})
-                log.info(f"Ad activée: {a['id']} ({a.get('name')})")
-                n_ads += 1
-
-        log.info(f"Activation autopilot : {n_adsets} ad set(s), {n_ads} ad(s)")
-        return {"adsets_activated": n_adsets, "ads_activated": n_ads}
 
     # ----- Validation pré-publish via Meta Preview API -----
 

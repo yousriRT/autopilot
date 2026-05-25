@@ -30,8 +30,6 @@
     "ad_account_id": "act_27109591352028062",
     "page_id": "1132799143252946",
     "lead_gen_form_id": "1691157705401234",
-    "launch_paused": true,
-    "_comment_launch_paused": "Pilote supervisé : les ads sont créées en PAUSE. Valider les vraies images dans Meta Ads Manager, puis `--action activate` pour démarrer le budget. Repasser à false une fois la créa validée pour l'autopilot complet (launch quotidien direct en ACTIVE).",
     "_comment_lead_form": "ID du formulaire instantané Meta. Les leads sont récupérés via l'API (get_ad_leads) puis scorés par qualité.",
     "pixel_id": "",
     "_comment_pixel": "Optionnel : non requis avec un formulaire instantané (l'optimisation se fait via la Page, pas le pixel).",

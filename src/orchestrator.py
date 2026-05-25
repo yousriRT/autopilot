@@ -467,12 +467,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--action",
-        choices=["launch", "optimize", "full", "dashboard", "healthcheck",
-                 "activate"],
+        choices=["launch", "optimize", "full", "dashboard", "healthcheck"],
         default="full",
         help="launch=nouvelles ads, optimize=budgets, full=les deux, "
-             "dashboard=snapshot+email, healthcheck=diagnostic (exit code), "
-             "activate=passe les ads AUTOPILOT en pause → ACTIVE (post-validation)"
+             "dashboard=snapshot+email, healthcheck=diagnostic (exit code)"
     )
     args = parser.parse_args()
 
@@ -491,12 +489,6 @@ def main():
             pilot.optimize_budgets()
         elif args.action == "dashboard":
             pilot.send_dashboard()
-        elif args.action == "activate":
-            res = pilot.publisher.activate_autopilot()
-            log.info(
-                f"Activé : {res['adsets_activated']} ad set(s), "
-                f"{res['ads_activated']} ad(s). Le budget commence maintenant."
-            )
         else:
             pilot.run_full_cycle()
 
