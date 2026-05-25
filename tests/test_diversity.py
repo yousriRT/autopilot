@@ -12,25 +12,25 @@ def enforcer(tmp_path):
 
 class TestPickNextCategory:
     def test_first_pick_returns_valid_category(self, enforcer):
-        cat = enforcer.pick_next_category("famille_4lignes")
-        assert cat in VERTICAL_CATEGORIES["famille_4lignes"]
+        cat = enforcer.pick_next_category("famille_bundle")
+        assert cat in VERTICAL_CATEGORIES["famille_bundle"]
 
     def test_pick_respects_vertical_categories(self, enforcer):
-        # famille_4lignes ne doit jamais retourner social_pressure
+        # famille_bundle ne doit jamais retourner social_pressure
         for _ in range(10):
-            cat = enforcer.pick_next_category("famille_4lignes")
-            assert cat in VERTICAL_CATEGORIES["famille_4lignes"]
+            cat = enforcer.pick_next_category("famille_bundle")
+            assert cat in VERTICAL_CATEGORIES["famille_bundle"]
             assert cat != "social_pressure"
-            enforcer.record_launch("famille_4lignes", cat)
+            enforcer.record_launch("famille_bundle", cat)
 
     def test_lru_rotates_through_all_categories(self, enforcer):
-        """Sur N launches d'une vertical, toutes les catégories doivent apparaître."""
-        valid = VERTICAL_CATEGORIES["fibre"]
+        """Sur N launches d'une offre, toutes les catégories doivent apparaître."""
+        valid = VERTICAL_CATEGORIES["famille_bundle"]
         seen = set()
         for _ in range(len(valid) * 2):
-            cat = enforcer.pick_next_category("fibre")
+            cat = enforcer.pick_next_category("famille_bundle")
             seen.add(cat)
-            enforcer.record_launch("fibre", cat)
+            enforcer.record_launch("famille_bundle", cat)
         assert seen == set(valid), f"toutes catégories devraient apparaître, manque {set(valid)-seen}"
 
     def test_unknown_vertical_uses_all_categories(self, enforcer):
@@ -42,14 +42,14 @@ class TestPickNextCategory:
         # Force une entrée vieille
         enforcer.state["launches"] = [{
             "ts": (datetime.now() - timedelta(days=40)).isoformat(),
-            "vertical": "fibre",
-            "category": "problem",
+            "vertical": "famille_bundle",
+            "category": "economic_gain",
         }]
-        # problem devrait être éligible (compte = 0 dans la fenêtre 30j)
-        for _ in range(4):
-            cat = enforcer.pick_next_category("fibre")
-            enforcer.record_launch("fibre", cat)
-        counts = {c: 0 for c in VERTICAL_CATEGORIES["fibre"]}
+        # economic_gain devrait être éligible (compte = 0 dans la fenêtre 30j)
+        for _ in range(3):
+            cat = enforcer.pick_next_category("famille_bundle")
+            enforcer.record_launch("famille_bundle", cat)
+        counts = {c: 0 for c in VERTICAL_CATEGORIES["famille_bundle"]}
         for l in enforcer.state["launches"][1:]:  # skip la vieille
             counts[l["category"]] += 1
         # Toutes les catégories doivent avoir count 1 (rotation parfaite)
@@ -58,12 +58,12 @@ class TestPickNextCategory:
     def test_invalid_ts_in_launches_skipped(self, enforcer):
         enforcer.state["launches"] = [{
             "ts": "not-a-date",
-            "vertical": "fibre",
-            "category": "problem",
+            "vertical": "famille_bundle",
+            "category": "economic_gain",
         }]
         # ne doit pas crasher
-        cat = enforcer.pick_next_category("fibre")
-        assert cat in VERTICAL_CATEGORIES["fibre"]
+        cat = enforcer.pick_next_category("famille_bundle")
+        assert cat in VERTICAL_CATEGORIES["famille_bundle"]
 
 
 class TestRecordLaunch:
@@ -106,7 +106,7 @@ class TestBriefs:
 
 class TestVerticalCategoriesSanity:
     def test_all_verticals_have_categories(self):
-        for v in ("fibre", "mobile", "tv", "securite", "famille_4lignes"):
+        for v in ("famille_bundle",):
             assert v in VERTICAL_CATEGORIES
             assert len(VERTICAL_CATEGORIES[v]) > 0
 
@@ -116,4 +116,4 @@ class TestVerticalCategoriesSanity:
                 assert c in CATEGORIES
 
     def test_famille_includes_family_category(self):
-        assert "family" in VERTICAL_CATEGORIES["famille_4lignes"]
+        assert "family" in VERTICAL_CATEGORIES["famille_bundle"]

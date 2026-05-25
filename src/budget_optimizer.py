@@ -12,7 +12,7 @@ on alloue plus de budget aux bras qui ressortent les meilleurs.
 Avantages vs règles fixes :
 - Auto-équilibre exploration (tester nouvelles ads) vs exploitation (scale gagnantes)
 - Pas besoin de définir "CPL cible" : le système trouve le meilleur tout seul
-- S'adapte à TES verticales (un CPL "bon" en sécurité ≠ en mobile)
+- S'adapte tout seul (pas de "CPL bon" hardcodé : ça dépend de la créa)
 - Robuste au bruit statistique (ne pause pas une ad sur un mauvais jour)
 
 Référence : Thompson Sampling pour bandits stochastiques (Russo et al. 2018)

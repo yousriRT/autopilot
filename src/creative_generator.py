@@ -5,13 +5,12 @@ Creative Generator
 1. Claude génère le concept (angle, prompt visuel, copy)
 2. OpenAI (gpt-image-1) génère l'IMAGE publicitaire à partir du prompt visuel
 
-5 verticales (fibre, mobile, TV, sécurité, famille_4lignes). Angles qui
-convertissent historiquement dans le télécom :
-- Économies (frustration de la facture qui monte)
-- Pain point technique (lenteur, perte de signal, panne)
-- Pression sociale (le voisin qui a la fibre)
-- Simplicité (changement sans coupure)
-- Famille (ado qui dépasse son forfait, partage de données, suivi parental)
+OFFRE UNIQUE : forfait famille **4 lignes mobiles + TV + internet**, pour des
+foyers québécois qui paient cher en payant tout séparément. Angles qui
+convertissent :
+- Économies (combiner 4 lignes + TV + internet coûte moins que tout séparément)
+- Famille (ado qui explose son forfait, partage de données, contrôle parental)
+- Simplicité (une seule facture, un seul fournisseur, changement sans coupure)
 
 CONTRAINTE STRICTE : aucune marque télécom n'est nommée dans les créas.
 Le service est présenté comme une "offre" générique. Le branding se fait
@@ -44,7 +43,7 @@ class ConceptOutput(BaseModel):
     image_prompt: str = Field(
         description="Prompt EN ANGLAIS pour le générateur d'images gpt-image-1. "
                     "Décrit une photo réaliste, lumineuse et authentique (style "
-                    "lifestyle/UGC) illustrant l'angle pour la verticale visée. "
+                    "lifestyle/UGC) illustrant l'angle de l'offre famille. "
                     "AUCUN texte/mot/chiffre visible dans l'image (les modèles "
                     "rendent mal le texte et Meta pénalise). AUCUN logo ni marque. "
                     "Pas de célébrité ni de personne reconnaissable. Contexte "
@@ -57,15 +56,16 @@ class ConceptOutput(BaseModel):
 
 # Stable. Si on franchit ~4096 tokens (few-shot, charte éditoriale, exemples
 # de créas historiques), le cache_control ephemeral plus bas s'active automatiquement.
-CONCEPT_SYSTEM = """Tu es expert en publicité Meta pour des offres télécom au Canada (fibre, mobile, TV, sécurité résidentielle, forfaits famille multi-lignes).
+CONCEPT_SYSTEM = """Tu es expert en publicité Meta pour UNE offre télécom au Québec : un forfait FAMILLE qui combine 4 lignes mobiles + la télé + l'internet en un seul forfait.
 
 CONTEXTE FIXE:
-- Marché: Canada (Québec)
-- Cible: dépend de la verticale (précisée dans le message utilisateur)
+- Marché: province de Québec (Canada)
+- Cible: parents / foyers qui paient cher parce qu'ils payent mobile, télé et internet séparément (souvent avec des ados qui consomment beaucoup de données)
+- Offre: regrouper 4 lignes mobiles + TV + internet → moins cher et plus simple que tout payer à part
 - Objectif: lead form Meta (soumission)
 - Format: IMAGE FIXE publicitaire (single image ad), ratio carré 1:1, pour le fil Meta
 - Langue: français québécois naturel pour le copy, pas de jargon corporate
-- Positionnement: "une offre télécom" — JAMAIS de marque nommée. Le branding se fait sur la landing page après le lead, pas dans la pub.
+- Positionnement: "une offre" — JAMAIS de marque nommée. Le branding se fait sur la landing page après le lead, pas dans la pub.
 
 CONTRAINTE BRANDING (CRITIQUE):
 - Ne nomme JAMAIS de marque télécom — ni concurrent ni partenaire — ex interdits: Bell, Rogers, Vidéotron, Telus, Koodo, Fido, Lucky Mobile, Public Mobile, etc.
@@ -79,12 +79,10 @@ POLICIES META À RESPECTER ABSOLUMENT:
 - Pas de comparaison nominative avec concurrents (cf. contrainte branding ci-dessus)
 - Claims chiffrés réalistes uniquement (pas "économisez 500$/mois")
 
-ANGLES RECOMMANDÉS PAR VERTICALE (à varier, pas répéter):
-- fibre: lenteur, coupures, déménagement, télétravail
-- mobile: facture qui monte, dépassement données, partage en couple
-- tv: bouquet trop cher, sport/séries spécifiques, simplicité de changement
-- securite: cambriolage de quartier, voyages tranquilles, parents âgés
-- famille_4lignes: ado qui explose son forfait data, gestion des écrans, partage facile entre 4 lignes, contrôle parental optionnel, économies vs 4 lignes séparées
+ANGLES RECOMMANDÉS POUR CETTE OFFRE (à varier, pas répéter):
+- économies: payer mobile + TV + internet séparément revient cher ; tout regrouper coûte moins
+- famille: ado qui explose son forfait data, gestion des écrans, partage facile entre 4 lignes, contrôle parental optionnel
+- simplicité: une seule facture, un seul fournisseur, changement sans coupure ni paperasse
 
 RÈGLE DE DIVERSITÉ: ne reproduis jamais un angle déjà gagnant à l'identique. Varie l'angle, la scène visuelle, le pain point.
 
@@ -93,7 +91,7 @@ CONTRAINTE CRITIQUE SUR LE CHAMP image_prompt:
 - Décris une PHOTO réaliste et authentique (style lifestyle/UGC, lumière naturelle), pas une illustration ni un montage marketing chargé.
 - ZÉRO texte, mot, chiffre, sous-titre ou watermark visible dans l'image : les modèles rendent mal le texte et Meta pénalise les images chargées de texte.
 - AUCUN logo, marque, slogan, ni célébrité ou personne reconnaissable.
-- La scène doit illustrer l'angle de façon évidente et positive pour la verticale (ex: famille détendue à la maison, télétravailleur serein, etc.), contexte canadien/québécois quand c'est pertinent.
+- La scène doit illustrer l'angle de façon évidente et positive pour une famille (ex: parents et ados détendus à la maison, soirée télé en famille, chacun sur son appareil sans souci de données), contexte canadien/québécois quand c'est pertinent.
 
 TON DU COPY (IMPORTANT):
 - primary_text / headline / description: ton NATUREL et POSÉ, comme une vraie personne — PAS une pub sur-jouée.

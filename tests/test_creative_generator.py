@@ -232,8 +232,9 @@ class TestSystemPromptContent:
         assert "Ne nomme JAMAIS de marque" in CONCEPT_SYSTEM
         assert "Bell" in CONCEPT_SYSTEM
 
-    def test_famille_angle_recommended(self):
-        assert "famille_4lignes" in CONCEPT_SYSTEM
+    def test_famille_bundle_offer_described(self):
+        # L'offre unique (4 lignes + TV + internet, famille) doit cadrer le prompt
+        assert "4 lignes" in CONCEPT_SYSTEM
         assert "ado" in CONCEPT_SYSTEM.lower()
 
     def test_image_prompt_constraint_present(self):

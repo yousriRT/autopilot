@@ -70,7 +70,7 @@ Tout le reste en dépend. Deux options :
       → me demander de la sortir dans la config + corriger le hardcode
 - [ ] Créer le fichier `.env` à partir de `.env.example` et y coller les clés
 - [ ] (Recommandé) Initialiser git (le dossier n'est pas versionné)
-- [ ] Ajuster le ciblage par verticale dans `config/config.json` si besoin
+- [ ] Ajuster le ciblage de l'offre `famille_bundle` dans `config/config.json` si besoin
       (régions, âges, intérêts)
 - [ ] Vérifier le `daily_total_budget` (défaut : 100 €/jour)
 

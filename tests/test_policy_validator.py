@@ -99,5 +99,5 @@ class TestSystemPromptContent:
 
     def test_minor_protection_rule_for_family(self, validator):
         from policy_validator import VALIDATION_SYSTEM
-        assert "famille_4lignes" in VALIDATION_SYSTEM
+        assert "famille" in VALIDATION_SYSTEM.lower()
         assert "mineur" in VALIDATION_SYSTEM.lower() or "Mineurs" in VALIDATION_SYSTEM

@@ -81,7 +81,7 @@ class DeadLetterQueue:
             "operation": "publish_ad",
             "payload": {...},  # tout ce qui faut pour rejouer
             "error": "...",
-            "vertical": "famille_4lignes",  # optionnel pour filtrer
+            "vertical": "famille_bundle",  # optionnel pour filtrer
             "attempts": 3,
         }
     """

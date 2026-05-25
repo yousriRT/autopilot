@@ -18,7 +18,7 @@ Le système fait le reste :
 
 ## Pourquoi pas de "seuil de CPL fixe" ?
 
-Parce que c'est nul. Un CPL de 20€ peut être excellent en sécurité résidentielle et catastrophique en mobile prépayé. Un seuil fixe te fait pauser des ads qui auraient explosé après 50€ de plus, et scaler des ads qui vont t'exploser à 200€.
+Parce que c'est nul. Un CPL de 20€ peut être excellent pour une créa et catastrophique pour une autre. Un seuil fixe te fait pauser des ads qui auraient explosé après 50€ de plus, et scaler des ads qui vont t'exploser à 200€.
 
 Le **Thompson Sampling** (multi-arm bandit bayésien) :
 - Modélise chaque ad comme un "bras" avec une distribution de probabilité de générer un lead par euro
@@ -72,7 +72,7 @@ cp .env.example .env
 Édite `config/config.json` :
 - `daily_total_budget` : ton plafond quotidien (€)
 - `meta.ad_account_id`, `page_id`, `pixel_id` : tes IDs Meta
-- `meta.targeting` : ajuste le ciblage par verticale (régions, âges, intérêts)
+- `meta.targeting` : ajuste le ciblage de l'offre `famille_bundle` (région Québec, âges, intérêts)
 
 ### 4. Comment obtenir un Meta System User Token (le bon)
 
@@ -125,13 +125,12 @@ Ajoute :
 ❌ Régénérer 50 ads par jour → flag du compte Meta  
 ❌ Scaler à +200% en une fois → reset apprentissage Meta  
 ❌ Pauser après 1 jour de mauvaise perf → bruit statistique  
-❌ Ciblage identique sur toutes les verticales → CPL pourri  
 ❌ User token Meta → expire, cron casse  
-❌ Hardcoder un "CPL cible" → faux pour 3 verticales sur 4
+❌ Hardcoder un "CPL cible" → le bandit le trouve tout seul
 
 ## Catégorie spéciale Meta (télécom)
 
-Selon ta région, fibre/mobile/sécurité peut être classée comme Special Ad Category par Meta. Si oui :
+Selon ta région, une offre télécom peut être classée comme Special Ad Category par Meta. Si oui :
 - Édite `_create_campaign()` dans `meta_publisher.py` 
 - Change `"special_ad_categories": "[]"` → `'["CREDIT"]'` (ou la catégorie correspondante)
 - Ciblage sera automatiquement restreint par Meta (pas d'âge précis, etc.)

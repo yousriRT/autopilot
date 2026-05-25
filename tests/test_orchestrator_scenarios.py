@@ -420,14 +420,14 @@ class TestDiversityRotationInLaunch:
         pilot.publisher._request.return_value = {"account_status": 1}
         pilot.guardian.publisher = pilot.publisher
 
-        # Lance 3 ads en famille_4lignes
+        # Lance 3 ads sur l'offre famille_bundle
         for _ in range(3):
-            pilot._create_and_publish_one("famille_4lignes", winning_angles=[])
+            pilot._create_and_publish_one("famille_bundle", winning_angles=[])
 
-        # 3 catégories différentes utilisées (puisque famille_4lignes a 3 catégories valides)
+        # 3 catégories différentes utilisées (famille_bundle a 3 catégories valides)
         from diversity import VERTICAL_CATEGORIES
         cats_used = {l["category"] for l in pilot.diversity.state["launches"]}
-        valid = set(VERTICAL_CATEGORIES["famille_4lignes"])
+        valid = set(VERTICAL_CATEGORIES["famille_bundle"])
         assert cats_used == valid
 
 

@@ -67,7 +67,7 @@ class SupabasePusher:
             service_key="eyJhbGc...",
             organization_id="82df0449-...",
         )
-        pusher.push(lead_data=meta_lead, ad_id="...", vertical="famille_4lignes", quality_score=0.85)
+        pusher.push(lead_data=meta_lead, ad_id="...", vertical="famille_bundle", quality_score=0.85)
     """
 
     SOURCE = "meta_lead_ads"

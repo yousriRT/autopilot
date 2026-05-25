@@ -5,15 +5,15 @@ Diversity Enforcement
 Sans contrainte, le LLM converge vers le meilleur angle gagnant et arrête
 d'explorer (mode collapse). On force la rotation par catégorie d'angle.
 
-5 catégories structurelles, valides toutes verticales :
+5 catégories structurelles :
 - problem        : pain technique, frustration produit (lenteur, coupures, etc.)
 - social_pressure: pression sociale, FOMO, comparaison avec entourage
 - economic_gain  : économies, promo, optimisation budget
 - ease           : facilité, simplicité, sans friction (changement, install)
-- family         : dynamique familiale (réservé surtout à famille_4lignes)
+- family         : dynamique familiale (ado, conjoint, partage, contrôle parental)
 
 À chaque launch, on tire la catégorie LRU (la moins utilisée récemment dans
-la verticale concernée). Claude reçoit la catégorie comme contrainte dure.
+l'offre concernée). Claude reçoit la catégorie comme contrainte dure.
 """
 
 import json
@@ -28,13 +28,10 @@ log = logging.getLogger(__name__)
 CATEGORIES = ["problem", "social_pressure", "economic_gain", "ease", "family"]
 
 
-# Catégories pertinentes par verticale (toutes ne s'appliquent pas partout)
+# Catégories pertinentes par offre. Offre unique : forfait famille
+# 4 lignes + TV + internet (économies, dynamique familiale, simplicité).
 VERTICAL_CATEGORIES = {
-    "fibre": ["problem", "social_pressure", "economic_gain", "ease"],
-    "mobile": ["problem", "economic_gain", "ease", "family"],
-    "tv": ["economic_gain", "ease", "family"],
-    "securite": ["problem", "social_pressure", "ease"],
-    "famille_4lignes": ["family", "economic_gain", "ease"],
+    "famille_bundle": ["economic_gain", "family", "ease"],
 }
 
 
