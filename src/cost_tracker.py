@@ -2,9 +2,9 @@
 Cost Tracker
 ============
 
-Consolide les coûts des 3 fournisseurs pour avoir UNE vue unique:
+Consolide les coûts des fournisseurs pour avoir UNE vue unique:
 - Anthropic : tokens consommés × prix par modèle (extrait de response.usage)
-- Arcads : nombre de vidéos × estimation $/vidéo (config)
+- OpenAI Images : nombre d'images générées × estimation $/image
 - Meta : spend remonté par les insights
 
 Utilité :
@@ -31,14 +31,10 @@ ANTHROPIC_PRICING = {
     "claude-haiku-4-5": (1.0, 5.0, 1.25, 0.1),
 }
 
-# Estimation Arcads (en USD, cf README projet)
-ARCADS_USD_PER_VIDEO = 7.0
-
-# Estimation HeyGen API (Avatar III ~1$/min → ~0,50$ pour une UGC 30s)
-HEYGEN_USD_PER_VIDEO = 0.5
-
-# Estimation Creatify API Starter (5 crédits / vidéo 30s, 99$/500 crédits)
-CREATIFY_USD_PER_VIDEO = 1.0
+# Estimation OpenAI gpt-image-1 (par image 1024x1024)
+# low ~0,011$ / medium ~0,042$ / high ~0,167$ — défaut medium.
+OPENAI_IMAGE_USD = {"low": 0.011, "medium": 0.042, "high": 0.167}
+OPENAI_IMAGE_USD_DEFAULT = 0.042
 
 
 class CostTracker:
@@ -49,7 +45,7 @@ class CostTracker:
         self.log_path = Path(log_path) if log_path else (Path(__file__).parent.parent / "data" / "cost_log.jsonl")
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.daily_budget_meta = float(config.get("daily_total_budget", 100.0))
-        # Plafond optionnel sur Anthropic+Arcads par jour (défaut: 30% du budget Meta)
+        # Plafond optionnel sur Anthropic+OpenAI par jour (défaut: 30% du budget Meta)
         self.daily_cap_creation_usd = float(
             config.get("daily_creation_cost_cap_usd", self.daily_budget_meta * 0.3)
         )
@@ -98,35 +94,15 @@ class CostTracker:
         })
         return cost
 
-    def record_arcads(self, video_id: str = "", duration_s: Optional[int] = None):
-        """Une vidéo générée Arcads."""
-        cost = ARCADS_USD_PER_VIDEO
+    def record_openai_image(self, model: str = "gpt-image-1", size: str = "1024x1024",
+                            quality: str = "medium"):
+        """Une image générée via OpenAI Images (gpt-image-1)."""
+        cost = OPENAI_IMAGE_USD.get(quality, OPENAI_IMAGE_USD_DEFAULT)
         self._append({
-            "type": "arcads",
-            "video_id": video_id,
-            "duration_s": duration_s,
-            "cost_usd": cost,
-        })
-        return cost
-
-    def record_heygen(self, video_id: str = "", duration_s: Optional[int] = None):
-        """Une vidéo générée HeyGen (API pay-as-you-go)."""
-        cost = HEYGEN_USD_PER_VIDEO
-        self._append({
-            "type": "heygen",
-            "video_id": video_id,
-            "duration_s": duration_s,
-            "cost_usd": cost,
-        })
-        return cost
-
-    def record_creatify(self, video_id: str = "", duration_s: Optional[int] = None):
-        """Une vidéo générée Creatify (vrai UGC)."""
-        cost = CREATIFY_USD_PER_VIDEO
-        self._append({
-            "type": "creatify",
-            "video_id": video_id,
-            "duration_s": duration_s,
+            "type": "openai_image",
+            "model": model,
+            "size": size,
+            "quality": quality,
             "cost_usd": cost,
         })
         return cost
@@ -135,9 +111,8 @@ class CostTracker:
         """Agrège les coûts du jour donné (défaut = aujourd'hui)."""
         target_date = (day or datetime.now()).date()
         totals = {
-            "anthropic": 0.0, "arcads": 0.0, "heygen": 0.0, "creatify": 0.0,
-            "anthropic_calls": 0, "arcads_calls": 0, "heygen_calls": 0,
-            "creatify_calls": 0,
+            "anthropic": 0.0, "openai_image": 0.0,
+            "anthropic_calls": 0, "openai_image_calls": 0,
             "creation_total_usd": 0.0,
         }
 
@@ -156,27 +131,20 @@ class CostTracker:
                     if t == "anthropic":
                         totals["anthropic"] += cost
                         totals["anthropic_calls"] += 1
-                    elif t == "arcads":
-                        totals["arcads"] += cost
-                        totals["arcads_calls"] += 1
-                    elif t == "heygen":
-                        totals["heygen"] += cost
-                        totals["heygen_calls"] += 1
-                    elif t == "creatify":
-                        totals["creatify"] += cost
-                        totals["creatify_calls"] += 1
+                    elif t == "openai_image":
+                        totals["openai_image"] += cost
+                        totals["openai_image_calls"] += 1
                 except (json.JSONDecodeError, ValueError, KeyError):
                     continue
 
         totals["creation_total_usd"] = (
-            totals["anthropic"] + totals["arcads"]
-            + totals["heygen"] + totals["creatify"]
+            totals["anthropic"] + totals["openai_image"]
         )
         return totals
 
     def is_creation_capped(self) -> tuple[bool, dict]:
         """
-        True si on a atteint le plafond Anthropic+Arcads du jour.
+        True si on a atteint le plafond Anthropic+OpenAI du jour.
         Sert à bloquer un --action launch si on a déjà brûlé trop de crédit.
         """
         totals = self.get_daily_costs()

@@ -9,49 +9,15 @@
     "api_key": "OVERRIDE_VIA_ENV"
   },
 
-  "arcads": {
-    "api_key": "OVERRIDE_VIA_ENV"
+  "openai": {
+    "_comment": "Génération des IMAGES publicitaires (gpt-image-1). Clé via env OPENAI_API_KEY. quality: low/medium/high (coût croissant). size: 1024x1024 (carré, fil Meta).",
+    "api_key": "OVERRIDE_VIA_ENV",
+    "model": "gpt-image-1",
+    "size": "1024x1024",
+    "quality": "medium"
   },
 
-  "heygen": {
-    "_comment": "avatar_id à choisir via tools/heygen_catalog.py. voice_source=elevenlabs car HeyGen n'a pas de voix québécoise (l'avatar lip-sync sur l'audio ElevenLabs fr-CA).",
-    "avatar_id": "Ann_Casual_Front_public",
-    "voice_source": "elevenlabs",
-    "voice_id": "",
-    "avatar_style": "normal",
-    "background": { "type": "color", "value": "#EAE3D6" },
-    "_comment_bg": "Fond chaleureux au lieu du blanc clinique. Peut être {\"type\":\"image\",\"url\":\"https://...\"} pour un vrai décor d'intérieur.",
-    "dimension": { "width": 720, "height": 1280 }
-  },
-
-  "elevenlabs": {
-    "_comment": "Voix québécoise fr-CA. voice_id à choisir via tools/elevenlabs_catalog.py (clé via env ELEVENLABS_API_KEY).",
-    "voice_id": "bBRsDJSAcL1ubkrtJ3hM",
-    "_voice_name": "Caroline - accent québécois doux (Voice Library)",
-    "model_id": "eleven_multilingual_v2",
-    "voice_settings": {
-      "stability": 0.4,
-      "similarity_boost": 0.8,
-      "style": 0.35,
-      "use_speaker_boost": true,
-      "speed": 1.12
-    }
-  },
-
-  "creatify": {
-    "_comment": "Vrai UGC. Auth via env CREATIFY_API_ID + CREATIFY_API_KEY. persona_id/voice_id à choisir via tools/creatify_catalog.py (style=selfie pour UGC, voix française/QC).",
-    "persona_id": "34b6dc45-e342-4a03-b5e1-39b12ef10f79",
-    "_persona_name": "Paige (brune, femme adulte, intérieur) — variante rousse: cb230f3e-109a-47cc-b72b-0ec7708a2414",
-    "voice_id": "68017270-207a-4204-a7a8-be0c2d792c20",
-    "_voice_name": "Victoria — voix FRANÇAISE NATIVE Creatify (test diagnostic lip-sync)",
-    "aspect_ratio": "9x16",
-    "model_version": "standard",
-    "no_caption": false,
-    "caption_style": "normal-white",
-    "no_music": true
-  },
-
-  "video_provider": "creatify",
+  "image_provider": "openai",
 
   "dashboard": {
     "_comment": "Email résumé quotidien. SMTP credentials via env: SMTP_USER + SMTP_PASSWORD (Gmail App Password, pas mot de passe compte).",
@@ -65,7 +31,7 @@
     "page_id": "1132799143252946",
     "lead_gen_form_id": "1691157705401234",
     "launch_paused": true,
-    "_comment_launch_paused": "Pilote supervisé : les ads sont créées en PAUSE. Valider les vraies vidéos dans Meta Ads Manager, puis `--action activate` pour démarrer le budget. Repasser à false une fois la créa validée pour l'autopilot complet (launch quotidien direct en ACTIVE).",
+    "_comment_launch_paused": "Pilote supervisé : les ads sont créées en PAUSE. Valider les vraies images dans Meta Ads Manager, puis `--action activate` pour démarrer le budget. Repasser à false une fois la créa validée pour l'autopilot complet (launch quotidien direct en ACTIVE).",
     "_comment_lead_form": "ID du formulaire instantané Meta. Les leads sont récupérés via l'API (get_ad_leads) puis scorés par qualité.",
     "pixel_id": "",
     "_comment_pixel": "Optionnel : non requis avec un formulaire instantané (l'optimisation se fait via la Page, pas le pixel).",

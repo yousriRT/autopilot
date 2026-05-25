@@ -85,7 +85,7 @@ class TestHealthcheckAction:
         pilot, claude, _ = isolated_pilot
         monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
         monkeypatch.setenv("META_ACCESS_TOKEN", "x")
-        monkeypatch.setenv("ARCADS_API_KEY", "x")
+        monkeypatch.setenv("OPENAI_API_KEY", "x")
         claude.models.list.return_value = iter([MagicMock()])
         pilot.publisher = MagicMock()
         pilot.publisher._request.return_value = {"account_status": 1, "disable_reason": 0}

@@ -1,10 +1,10 @@
-"""Tests pour CostTracker — pricing Anthropic + Arcads + plafond."""
+"""Tests pour CostTracker — pricing Anthropic + OpenAI image + plafond."""
 
 import json
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
-from cost_tracker import CostTracker, ANTHROPIC_PRICING, ARCADS_USD_PER_VIDEO
+from cost_tracker import CostTracker, ANTHROPIC_PRICING, OPENAI_IMAGE_USD_DEFAULT
 
 
 @pytest.fixture
@@ -86,66 +86,79 @@ class TestUsageFormats:
         assert cost == 0.0
 
 
-class TestArcads:
-    def test_record_arcads_constant_cost(self, tracker):
-        cost = tracker.record_arcads(video_id="v1")
-        assert cost == ARCADS_USD_PER_VIDEO
+class TestOpenAIImage:
+    def test_record_image_default_cost(self, tracker):
+        cost = tracker.record_openai_image()
+        assert cost == OPENAI_IMAGE_USD_DEFAULT
+
+    def test_record_image_quality_tiers(self, tracker):
+        low = tracker.record_openai_image(quality="low")
+        high = tracker.record_openai_image(quality="high")
+        assert low < OPENAI_IMAGE_USD_DEFAULT < high
+
+    def test_unknown_quality_falls_back(self, tracker):
+        cost = tracker.record_openai_image(quality="ultra")
+        assert cost == OPENAI_IMAGE_USD_DEFAULT
 
 
 class TestDailyAggregation:
     def test_get_daily_costs_aggregates(self, tracker):
         tracker.record_anthropic("claude-opus-4-7", make_usage(1000, 500))
         tracker.record_anthropic("claude-sonnet-4-6", make_usage(1000, 500))
-        tracker.record_arcads()
-        tracker.record_arcads()
+        tracker.record_openai_image()
+        tracker.record_openai_image()
         totals = tracker.get_daily_costs()
         assert totals["anthropic_calls"] == 2
-        assert totals["arcads_calls"] == 2
-        assert totals["arcads"] == 2 * ARCADS_USD_PER_VIDEO
-        assert totals["creation_total_usd"] == totals["anthropic"] + totals["arcads"]
+        assert totals["openai_image_calls"] == 2
+        assert totals["openai_image"] == pytest.approx(2 * OPENAI_IMAGE_USD_DEFAULT)
+        assert totals["creation_total_usd"] == pytest.approx(
+            totals["anthropic"] + totals["openai_image"]
+        )
 
     def test_get_daily_costs_filters_by_date(self, tracker, tmp_path):
         # On écrit manuellement une entrée d'hier
         with open(tracker.log_path, "a") as f:
             f.write(json.dumps({
                 "ts": (datetime.now() - timedelta(days=1)).isoformat(),
-                "type": "arcads", "cost_usd": 7.0,
+                "type": "openai_image", "cost_usd": 0.042,
             }) + "\n")
-        tracker.record_arcads()
+        tracker.record_openai_image()
         totals = tracker.get_daily_costs()
-        assert totals["arcads_calls"] == 1  # seulement aujourd'hui
+        assert totals["openai_image_calls"] == 1  # seulement aujourd'hui
 
     def test_get_daily_costs_no_log(self, tracker):
         # Avant tout enregistrement
         totals = tracker.get_daily_costs()
         assert totals["anthropic"] == 0.0
-        assert totals["arcads"] == 0.0
+        assert totals["openai_image"] == 0.0
 
     def test_corrupt_log_lines_skipped(self, tracker):
         with open(tracker.log_path, "a") as f:
             f.write("not json\n")
-            f.write(json.dumps({"ts": datetime.now().isoformat(), "type": "arcads", "cost_usd": 7.0}) + "\n")
+            f.write(json.dumps({"ts": datetime.now().isoformat(), "type": "openai_image", "cost_usd": 0.042}) + "\n")
         totals = tracker.get_daily_costs()
-        assert totals["arcads_calls"] == 1
+        assert totals["openai_image_calls"] == 1
 
 
 class TestCreationCap:
     def test_under_cap_not_capped(self, tracker):
-        tracker.record_arcads()  # $7 < cap $30 (30% de $100)
+        tracker.record_openai_image()  # ~$0.042 < cap $30 (30% de $100)
         capped, totals = tracker.is_creation_capped()
         assert capped is False
 
-    def test_over_cap_triggered(self, tracker):
-        for _ in range(10):
-            tracker.record_arcads()  # $70 > $30
-        capped, totals = tracker.is_creation_capped()
+    def test_over_cap_triggered(self, tmp_path, base_config):
+        config = {**base_config, "daily_creation_cost_cap_usd": 0.05}
+        t = CostTracker(config, log_path=tmp_path / "costs.jsonl")
+        t.record_openai_image()
+        t.record_openai_image()  # ~$0.084 > $0.05
+        capped, totals = t.is_creation_capped()
         assert capped is True
-        assert totals["creation_total_usd"] >= tracker.daily_cap_creation_usd
+        assert totals["creation_total_usd"] >= t.daily_cap_creation_usd
 
     def test_cap_configurable(self, tmp_path, base_config):
-        config = {**base_config, "daily_creation_cost_cap_usd": 5.0}
+        config = {**base_config, "daily_creation_cost_cap_usd": 0.02}
         t = CostTracker(config, log_path=tmp_path / "costs.jsonl")
-        t.record_arcads()  # $7 > $5
+        t.record_openai_image()  # ~$0.042 > $0.02
         capped, _ = t.is_creation_capped()
         assert capped is True
 
@@ -154,5 +167,5 @@ class TestPathHandling:
     def test_accepts_string_path(self, tmp_path, base_config):
         # Bug fix : accepter str ET Path
         t = CostTracker(base_config, log_path=str(tmp_path / "costs.jsonl"))
-        t.record_arcads()
+        t.record_openai_image()
         assert t.log_path.exists()

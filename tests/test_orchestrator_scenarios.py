@@ -12,7 +12,7 @@ situations qu'il va rencontrer en prod :
 - lock fichier bloque les crons concurrents
 - compte Meta désactivé → abort propre
 
-Tous ces tests utilisent des mocks pour Anthropic / Meta / Arcads / SMTP.
+Tous ces tests utilisent des mocks pour Anthropic / Meta / OpenAI / SMTP.
 Aucun appel réseau réel.
 """
 
@@ -20,7 +20,7 @@ import json
 import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from creative_generator import ConceptOutput
 from policy_validator import PolicyResult
 
@@ -93,12 +93,10 @@ def make_claude_response(parsed):
 def make_concept(angle="frustration_facture"):
     return ConceptOutput(
         angle=angle,
-        hook_first_3s="Hook 3s",
-        video_script="Script complet",
+        image_prompt="A candid lifestyle photo, natural light, no text, no logos.",
         primary_text="Primary",
         headline="Head",
         description="Desc",
-        avatar_persona="femme 40 QC",
     )
 
 
@@ -117,28 +115,21 @@ class TestHappyPathLaunch:
             for i in range(20)
         ]
 
-        # Arcads OK
-        with patch("creative_generator.requests") as mreq:
-            mreq.post.return_value = MagicMock(json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None)
-            mreq.get.return_value = MagicMock(
-                json=lambda: {"status": "completed", "video_url": "https://v/x.mp4"},
-                raise_for_status=lambda: None,
-            )
-            mreq.RequestException = Exception
-            with patch("creative_generator.time.sleep"):
-                # Meta publisher : tout en succès
-                pilot.publisher = MagicMock()
-                pilot.publisher.get_active_ads.return_value = []
-                pilot.publisher.upload_video.return_value = "v_id"
-                pilot.publisher.create_ad_creative.return_value = "c_id"
-                pilot.publisher.preview_creative.return_value = {"ok": True, "body": "preview"}
-                pilot.publisher._get_or_create_campaign.return_value = "camp_id"
-                pilot.publisher._create_adset.return_value = "as_id"
-                pilot.publisher._create_ad.side_effect = [f"ad_{v}" for v in range(20)]
-                pilot.publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
-                pilot.guardian.publisher = pilot.publisher
+        # Génération image IA OK
+        pilot.creative_gen.generate_image = MagicMock(return_value=b"img-bytes")
+        # Meta publisher : tout en succès
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.return_value = "img_hash"
+        pilot.publisher.create_ad_creative.return_value = "c_id"
+        pilot.publisher.preview_creative.return_value = {"ok": True, "body": "preview"}
+        pilot.publisher._get_or_create_campaign.return_value = "camp_id"
+        pilot.publisher._create_adset.return_value = "as_id"
+        pilot.publisher._create_ad.side_effect = [f"ad_{v}" for v in range(20)]
+        pilot.publisher._request.return_value = {"account_status": 1, "disable_reason": 0}
+        pilot.guardian.publisher = pilot.publisher
 
-                pilot.launch_new_ads()
+        pilot.launch_new_ads()
 
         # 3 verticales × 3 ads = 9 ads minimum
         assert len(pilot.tracker.data["ads"]) >= 3
@@ -163,26 +154,19 @@ class TestSelfHealingPolicy:
             make_claude_response(PolicyResult(valid=True)),           # validate OK
         ]
 
-        with patch("creative_generator.requests") as mreq:
-            mreq.post.return_value = MagicMock(json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None)
-            mreq.get.return_value = MagicMock(
-                json=lambda: {"status": "completed", "video_url": "https://v/x.mp4"},
-                raise_for_status=lambda: None,
-            )
-            mreq.RequestException = Exception
-            with patch("creative_generator.time.sleep"):
-                pilot.publisher = MagicMock()
-                pilot.publisher.get_active_ads.return_value = []
-                pilot.publisher.upload_video.return_value = "v_id"
-                pilot.publisher.create_ad_creative.return_value = "c_id"
-                pilot.publisher.preview_creative.return_value = {"ok": True, "body": "ok"}
-                pilot.publisher._get_or_create_campaign.return_value = "camp_id"
-                pilot.publisher._create_adset.return_value = "as_id"
-                pilot.publisher._create_ad.return_value = "ad_xxx"
-                pilot.publisher._request.return_value = {"account_status": 1}
-                pilot.guardian.publisher = pilot.publisher
+        pilot.creative_gen.generate_image = MagicMock(return_value=b"img-bytes")
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.return_value = "img_hash"
+        pilot.publisher.create_ad_creative.return_value = "c_id"
+        pilot.publisher.preview_creative.return_value = {"ok": True, "body": "ok"}
+        pilot.publisher._get_or_create_campaign.return_value = "camp_id"
+        pilot.publisher._create_adset.return_value = "as_id"
+        pilot.publisher._create_ad.return_value = "ad_xxx"
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
 
-                pilot._create_and_publish_one("famille_4lignes", winning_angles=[])
+        pilot._create_and_publish_one("famille_4lignes", winning_angles=[])
 
         # L'ad publiée a l'angle de la regen, pas le rejet
         assert "ad_xxx" in pilot.tracker.data["ads"]
@@ -220,33 +204,27 @@ class TestSelfHealingMetaPreview:
             make_claude_response(PolicyResult(valid=True)),  # policy OK
             make_claude_response(make_concept("v2")),         # regen après meta preview KO
         ]
-        with patch("creative_generator.requests") as mreq:
-            mreq.post.return_value = MagicMock(json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None)
-            mreq.get.return_value = MagicMock(
-                json=lambda: {"status": "completed", "video_url": "https://v/x.mp4"},
-                raise_for_status=lambda: None,
-            )
-            mreq.RequestException = Exception
-            with patch("creative_generator.time.sleep"):
-                pilot.publisher = MagicMock()
-                pilot.publisher.get_active_ads.return_value = []
-                pilot.publisher.upload_video.side_effect = ["v1_id", "v2_id"]
-                pilot.publisher.create_ad_creative.side_effect = ["c1_id", "c2_id"]
-                # 1er preview rejette, 2e accepte
-                pilot.publisher.preview_creative.side_effect = [
-                    {"ok": False, "body": "text trop long"},
-                    {"ok": True, "body": "ok"},
-                ]
-                pilot.publisher._get_or_create_campaign.return_value = "camp_id"
-                pilot.publisher._create_adset.return_value = "as_id"
-                pilot.publisher._create_ad.return_value = "ad_final"
-                pilot.publisher._request.return_value = {"account_status": 1}
-                pilot.guardian.publisher = pilot.publisher
+        pilot.creative_gen.generate_image = MagicMock(side_effect=[b"img1", b"img2"])
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.side_effect = ["h1", "h2"]
+        pilot.publisher.create_ad_creative.side_effect = ["c1_id", "c2_id"]
+        # 1er preview rejette, 2e accepte
+        pilot.publisher.preview_creative.side_effect = [
+            {"ok": False, "body": "text trop long"},
+            {"ok": True, "body": "ok"},
+        ]
+        pilot.publisher._get_or_create_campaign.return_value = "camp_id"
+        pilot.publisher._create_adset.return_value = "as_id"
+        pilot.publisher._create_ad.return_value = "ad_final"
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
 
-                pilot._create_and_publish_one("fibre", winning_angles=[])
+        pilot._create_and_publish_one("fibre", winning_angles=[])
 
-        # On a bien généré 2 vidéos (regen) et publié l'ad
-        assert pilot.publisher.upload_video.call_count == 2
+        # On a bien généré 2 images (regen) et publié l'ad
+        assert pilot.creative_gen.generate_image.call_count == 2
+        assert pilot.publisher.upload_image.call_count == 2
         assert "ad_final" in pilot.tracker.data["ads"]
         # Angle final = v2 (post-regen)
         assert pilot.tracker.data["ads"]["ad_final"]["angle"] == "v2"
@@ -258,25 +236,18 @@ class TestSelfHealingMetaPreview:
             make_claude_response(PolicyResult(valid=True)),
             make_claude_response(make_concept("v2")),  # regen
         ]
-        with patch("creative_generator.requests") as mreq:
-            mreq.post.return_value = MagicMock(json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None)
-            mreq.get.return_value = MagicMock(
-                json=lambda: {"status": "completed", "video_url": "https://v/x.mp4"},
-                raise_for_status=lambda: None,
-            )
-            mreq.RequestException = Exception
-            with patch("creative_generator.time.sleep"):
-                pilot.publisher = MagicMock()
-                pilot.publisher.get_active_ads.return_value = []
-                pilot.publisher.upload_video.return_value = "v_id"
-                pilot.publisher.create_ad_creative.return_value = "c_id"
-                # Toujours rejeté
-                pilot.publisher.preview_creative.return_value = {"ok": False, "body": "rejected"}
-                pilot.publisher._request.return_value = {"account_status": 1}
-                pilot.guardian.publisher = pilot.publisher
+        pilot.creative_gen.generate_image = MagicMock(return_value=b"img-bytes")
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.return_value = "img_hash"
+        pilot.publisher.create_ad_creative.return_value = "c_id"
+        # Toujours rejeté
+        pilot.publisher.preview_creative.return_value = {"ok": False, "body": "rejected"}
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
 
-                with pytest.raises(RuntimeError, match="Meta Preview rejeté 2 fois"):
-                    pilot._create_and_publish_one("fibre", winning_angles=[])
+        with pytest.raises(RuntimeError, match="Meta Preview rejeté 2 fois"):
+            pilot._create_and_publish_one("fibre", winning_angles=[])
 
 
 # ============================================================
@@ -311,8 +282,8 @@ class TestKillSwitchTriggers:
         pilot.guardian.publisher = pilot.publisher
 
         pilot.launch_new_ads()
-        # Aucun appel à upload_video — preflight a stoppé tôt
-        pilot.publisher.upload_video.assert_not_called()
+        # Aucun appel à upload_image — preflight a stoppé tôt
+        pilot.publisher.upload_image.assert_not_called()
 
     def test_meta_account_disabled_skips(self, isolated_orchestrator):
         pilot, claude = isolated_orchestrator
@@ -321,7 +292,7 @@ class TestKillSwitchTriggers:
         pilot.guardian.publisher = pilot.publisher
 
         pilot.launch_new_ads()
-        pilot.publisher.upload_video.assert_not_called()
+        pilot.publisher.upload_image.assert_not_called()
 
 
 # ============================================================
@@ -437,28 +408,21 @@ class TestDiversityRotationInLaunch:
             else make_claude_response(PolicyResult(valid=True))
             for i in range(20)
         ]
-        with patch("creative_generator.requests") as mreq:
-            mreq.post.return_value = MagicMock(json=lambda: {"job_id": "j1"}, raise_for_status=lambda: None)
-            mreq.get.return_value = MagicMock(
-                json=lambda: {"status": "completed", "video_url": "https://v/x.mp4"},
-                raise_for_status=lambda: None,
-            )
-            mreq.RequestException = Exception
-            with patch("creative_generator.time.sleep"):
-                pilot.publisher = MagicMock()
-                pilot.publisher.get_active_ads.return_value = []
-                pilot.publisher.upload_video.return_value = "v_id"
-                pilot.publisher.create_ad_creative.return_value = "c_id"
-                pilot.publisher.preview_creative.return_value = {"ok": True, "body": "ok"}
-                pilot.publisher._get_or_create_campaign.return_value = "camp_id"
-                pilot.publisher._create_adset.return_value = "as_id"
-                pilot.publisher._create_ad.side_effect = [f"ad_{i}" for i in range(20)]
-                pilot.publisher._request.return_value = {"account_status": 1}
-                pilot.guardian.publisher = pilot.publisher
+        pilot.creative_gen.generate_image = MagicMock(return_value=b"img-bytes")
+        pilot.publisher = MagicMock()
+        pilot.publisher.get_active_ads.return_value = []
+        pilot.publisher.upload_image.return_value = "img_hash"
+        pilot.publisher.create_ad_creative.return_value = "c_id"
+        pilot.publisher.preview_creative.return_value = {"ok": True, "body": "ok"}
+        pilot.publisher._get_or_create_campaign.return_value = "camp_id"
+        pilot.publisher._create_adset.return_value = "as_id"
+        pilot.publisher._create_ad.side_effect = [f"ad_{i}" for i in range(20)]
+        pilot.publisher._request.return_value = {"account_status": 1}
+        pilot.guardian.publisher = pilot.publisher
 
-                # Lance 3 ads en famille_4lignes
-                for _ in range(3):
-                    pilot._create_and_publish_one("famille_4lignes", winning_angles=[])
+        # Lance 3 ads en famille_4lignes
+        for _ in range(3):
+            pilot._create_and_publish_one("famille_4lignes", winning_angles=[])
 
         # 3 catégories différentes utilisées (puisque famille_4lignes a 3 catégories valides)
         from diversity import VERTICAL_CATEGORIES
@@ -474,9 +438,10 @@ class TestDiversityRotationInLaunch:
 class TestCostCapBlocksLaunch:
     def test_creation_cap_skips_launch(self, isolated_orchestrator):
         pilot, claude = isolated_orchestrator
-        # Force le cap atteint
-        for _ in range(5):
-            pilot.cost_tracker.record_arcads()  # 5 × $7 = $35 > cap par défaut $30
+        # Force le cap atteint (cap par défaut $30 = 30% de $100)
+        pilot.cost_tracker.daily_cap_creation_usd = 0.05
+        for _ in range(3):
+            pilot.cost_tracker.record_openai_image()  # 3 × ~$0.042 > $0.05
 
         pilot.publisher = MagicMock()
         pilot.publisher._request.return_value = {"account_status": 1}

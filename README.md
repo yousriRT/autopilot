@@ -1,16 +1,18 @@
 # Meta Ads Auto-Pilot 🚀
 
-Le **bouton qui fait tout** : Claude génère les concepts, Arcads produit les vidéos, le système publie sur Meta et trouve le meilleur budget tout seul.
+Le **bouton qui fait tout** : Claude génère les concepts, OpenAI (gpt-image-1) produit les images, le système publie sur Meta et trouve le meilleur budget tout seul.
+
+> Créas **image uniquement** (single image ads). Pas de vidéo ni d'avatar IA.
 
 ## L'idée centrale
 
 Tu fixes UNE seule chose : **ton budget quotidien max** (ex: 100€/jour).
 
 Le système fait le reste :
-- Claude crée les concepts (en s'appuyant sur ce qui a converti dans le passé)
-- Validation auto contre les policies Meta (avant de gaspiller du crédit Arcads)
-- Génération vidéo UGC via Arcads
-- Publication sur Meta avec un budget de départ minimal
+- Claude crée les concepts + le copy (en s'appuyant sur ce qui a converti dans le passé)
+- Validation auto contre les policies Meta (avant de gaspiller du crédit image)
+- Génération de l'image publicitaire via OpenAI (gpt-image-1)
+- Publication sur Meta (single image ad) avec un budget de départ minimal
 - **Thompson Sampling** réalloue le budget en continu vers les ads gagnantes
 - Pause auto des ads qui ne performent vraiment pas
 
@@ -42,8 +44,8 @@ Le **Thompson Sampling** (multi-arm bandit bayésien) :
        │
        ▼
   ┌──────────┐
-  │  Arcads  │
-  │  vidéo   │
+  │  OpenAI  │
+  │  image   │
   └──────────┘
 ```
 
@@ -116,7 +118,7 @@ Ajoute :
 ## Pourquoi cette séparation ?
 
 - `optimize` (toutes les heures) : léger, juste des appels API Meta + calculs locaux. Garde les budgets réactifs.
-- `launch` (1×/jour) : coûte de l'argent (Arcads ~5-10$/vidéo, Claude ~0.20$/concept). Pas besoin d'en générer 24×/jour.
+- `launch` (1×/jour) : coûte de l'argent (OpenAI gpt-image-1 ~0.04$/image, Claude ~0.20$/concept). Pas besoin d'en générer 24×/jour.
 
 ## Anti-patterns évités
 

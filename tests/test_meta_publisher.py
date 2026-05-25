@@ -76,48 +76,47 @@ class TestRequestRetry:
             assert params["access_token"] == "EAA-test"
 
 
-class TestUploadVideo:
-    def test_upload_returns_id(self, publisher):
+class TestUploadImage:
+    def test_upload_returns_hash(self, publisher):
         with patch.object(publisher, "_request") as mreq:
-            mreq.return_value = {"id": "video_xyz"}
-            assert publisher.upload_video("https://video/x.mp4") == "video_xyz"
-            assert mreq.call_args.args == ("POST", "act_123/advideos")
+            mreq.return_value = {"images": {"bytes": {"hash": "img_hash_1", "url": "https://x"}}}
+            assert publisher.upload_image(b"PNGDATA") == "img_hash_1"
+            assert mreq.call_args.args == ("POST", "act_123/adimages")
+            # L'image part en base64 dans le champ `bytes`
+            assert "bytes" in mreq.call_args.kwargs["data"]
+
+    def test_upload_raises_on_empty_response(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"images": {}}
+            with pytest.raises(RuntimeError, match="réponse inattendue"):
+                publisher.upload_image(b"PNGDATA")
+
+    def test_upload_raises_when_hash_absent(self, publisher):
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"images": {"bytes": {"url": "https://x"}}}
+            with pytest.raises(RuntimeError, match="hash absent"):
+                publisher.upload_image(b"PNGDATA")
 
 
 class TestCreateAdCreative:
     def test_returns_creative_id(self, publisher):
-        with patch.object(publisher, "_request") as mreq, \
-             patch("meta_publisher.time.sleep"):
-            # 1er appel = GET thumbnail, 2e = POST adcreatives
-            mreq.side_effect = [
-                {"thumbnails": {"data": [
-                    {"uri": "https://t/x.jpg", "is_preferred": True}
-                ]}},
-                {"id": "creative_xyz"},
-            ]
+        with patch.object(publisher, "_request") as mreq:
+            mreq.return_value = {"id": "creative_xyz"}
             cid = publisher.create_ad_creative(
-                "video_1", "primary", "headline", "desc"
+                "img_hash_1", "primary", "headline", "desc"
             )
             assert cid == "creative_xyz"
-            data = mreq.call_args.kwargs["data"]  # dernier appel = POST
+            data = mreq.call_args.kwargs["data"]
             import json as jsonmod
             spec = jsonmod.loads(data["object_story_spec"])
             assert spec["page_id"] == "page_123"
-            assert spec["video_data"]["video_id"] == "video_1"
-            # Miniature obligatoire pour Meta (sinon erreur 1443226)
-            assert spec["video_data"]["image_url"] == "https://t/x.jpg"
-            cta = spec["video_data"]["call_to_action"]
+            assert spec["link_data"]["image_hash"] == "img_hash_1"
+            assert spec["link_data"]["name"] == "headline"
+            assert spec["link_data"]["message"] == "primary"
+            assert spec["link_data"]["description"] == "desc"
+            assert "link" in spec["link_data"]
+            cta = spec["link_data"]["call_to_action"]
             assert cta["value"]["lead_gen_form_id"] == "form_999"
-            assert "link" not in cta["value"]
-
-    def test_thumbnail_polls_until_ready(self, publisher):
-        with patch.object(publisher, "_request") as mreq, \
-             patch("meta_publisher.time.sleep"):
-            mreq.side_effect = [
-                {"status": {"video_status": "processing"}, "thumbnails": {"data": []}},
-                {"thumbnails": {"data": [{"uri": "https://t/ok.jpg"}]}},
-            ]
-            assert publisher._video_thumbnail_url("vid_1") == "https://t/ok.jpg"
 
     def test_raises_without_form_id(self, base_config):
         import copy
@@ -125,7 +124,7 @@ class TestCreateAdCreative:
         cfg["meta"].pop("lead_gen_form_id", None)
         pub = MetaPublisher(cfg)
         with pytest.raises(RuntimeError, match="lead_gen_form_id"):
-            pub.create_ad_creative("v", "p", "h", "d")
+            pub.create_ad_creative("h", "p", "h", "d")
 
 
 class TestPreviewCreative:
@@ -264,19 +263,17 @@ class TestGetOrCreateCampaign:
 
 class TestPublishAdFlow:
     def test_full_flow(self, publisher):
-        with patch.object(publisher, "_request") as mreq, \
-             patch("meta_publisher.time.sleep"):
+        with patch.object(publisher, "_request") as mreq:
             mreq.side_effect = [
                 {"data": [{"id": "camp_1", "name": "AUTOPILOT_FIBRE", "status": "ACTIVE"}]},
-                {"id": "video_1"},      # upload_video
-                {"thumbnails": {"data": [{"uri": "https://t/x.jpg"}]}},  # thumbnail poll
+                {"images": {"bytes": {"hash": "img_1"}}},  # upload_image
                 {"id": "creative_1"},   # create_ad_creative
                 {"id": "adset_1"},      # _create_adset
                 {"id": "ad_1"},         # _create_ad
             ]
             result = publisher.publish_ad(
                 vertical="fibre",
-                video_url="https://x/y.mp4",
+                image_bytes=b"PNGDATA",
                 primary_text="primary",
                 headline="head",
                 description="desc",
@@ -284,6 +281,7 @@ class TestPublishAdFlow:
             )
             assert result["ad_id"] == "ad_1"
             assert result["campaign_id"] == "camp_1"
+            assert result["image_hash"] == "img_1"
 
 
 @pytest.fixture

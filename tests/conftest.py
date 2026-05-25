@@ -18,8 +18,9 @@ def base_config():
     return {
         "daily_total_budget": 100.0,
         "anthropic": {"api_key": "sk-ant-test"},
-        "arcads": {"api_key": "arcads-test"},
-        "video_provider": "arcads",
+        "openai": {"api_key": "openai-test", "model": "gpt-image-1",
+                   "size": "1024x1024", "quality": "medium"},
+        "image_provider": "openai",
         "dashboard": {"recipient_email": "test@example.com"},
         "meta": {
             "access_token": "EAA-test",
@@ -91,12 +92,12 @@ def lead_minimal():
 def sample_creative_brief():
     return {
         "angle": "frustration_facture",
-        "hook_first_3s": "Ma facture a doublé en 6 mois.",
-        "video_script": "Bonjour, moi c'est Jane. Ma facture a doublé en 6 mois sans rien changer.",
+        "image_prompt": "A relatable Quebec woman in her 40s at her kitchen table "
+                        "reviewing a paper bill, natural daylight, candid lifestyle "
+                        "photo, no text, no logos.",
         "primary_text": "Découvre une offre télécom qui fait baisser ta facture",
         "headline": "Économise sur ta facture",
         "description": "Soumission gratuite",
-        "avatar_persona": "femme 40 ans, look québécois",
     }
 
 
@@ -140,7 +141,7 @@ def mock_publisher():
         "spend": 0, "impressions": 0, "reach": 0, "leads": 0, "clicks": 0, "ctr": 0, "frequency": 0
     }
     pub.get_ad_leads.return_value = []
-    pub.upload_video.return_value = "video_id_123"
+    pub.upload_image.return_value = "image_hash_123"
     pub.create_ad_creative.return_value = "creative_id_123"
     pub.preview_creative.return_value = {"ok": True, "body": "<html>preview</html>"}
     pub._get_or_create_campaign.return_value = "campaign_id_123"

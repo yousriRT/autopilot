@@ -3,9 +3,9 @@ Meta Ads Auto-Pilot - Orchestrateur principal
 ==============================================
 
 Le bouton qui fait TOUT, vraiment :
-1. Claude génère idée + script vidéo (catégorie d'angle imposée par diversity enforcer)
+1. Claude génère idée + prompt visuel (catégorie d'angle imposée par diversity enforcer)
 2. Validation policy via Claude (Sonnet 4.6 + adaptive thinking)
-3. Génération vidéo Arcads
+3. Génération image IA (OpenAI gpt-image-1)
 4. Validation Meta Preview API (si elle dit non, regen avec le retour Meta)
 5. Publication Meta Ads
 6. Auto-budget via Thompson Sampling sur leads pondérés par qualité
@@ -234,15 +234,15 @@ class MetaAdsAutoPilot:
             else:
                 raise RuntimeError(f"[{vertical}] Concept rejeté après {MAX_REGEN_ATTEMPTS} tentatives")
 
-        # 4. Génération vidéo Arcads
-        log.info(f"[{vertical}] Génération vidéo ({self.creative_gen.video_provider})...")
-        video_url = self.creative_gen.generate_video(creative_brief)
+        # 4. Génération image IA
+        log.info(f"[{vertical}] Génération image ({self.creative_gen.image_provider})...")
+        image_bytes = self.creative_gen.generate_image(creative_brief)
 
         # 5. Upload + create_creative pour preview Meta
-        log.info(f"[{vertical}] Upload vidéo + creative pour preview...")
-        video_id = self.publisher.upload_video(video_url)
+        log.info(f"[{vertical}] Upload image + creative pour preview...")
+        image_hash = self.publisher.upload_image(image_bytes)
         creative_id = self.publisher.create_ad_creative(
-            video_id,
+            image_hash,
             primary_text=creative_brief["primary_text"],
             headline=creative_brief["headline"],
             description=creative_brief["description"],
@@ -258,11 +258,11 @@ class MetaAdsAutoPilot:
                 issues=[f"Meta a rejeté l'aperçu : {preview['body'][:300]}"],
                 source="meta_preview",
             )
-            # On re-génère la vidéo Arcads (la créa a changé)
-            video_url = self.creative_gen.generate_video(creative_brief)
-            video_id = self.publisher.upload_video(video_url)
+            # On re-génère l'image (la créa a changé)
+            image_bytes = self.creative_gen.generate_image(creative_brief)
+            image_hash = self.publisher.upload_image(image_bytes)
             creative_id = self.publisher.create_ad_creative(
-                video_id,
+                image_hash,
                 primary_text=creative_brief["primary_text"],
                 headline=creative_brief["headline"],
                 description=creative_brief["description"],
@@ -288,7 +288,7 @@ class MetaAdsAutoPilot:
             "adset_id": adset_id,
             "ad_id": ad_id,
             "creative_id": creative_id,
-            "video_id": video_id,
+            "image_hash": image_hash,
         }
 
         # 8. Enregistre tracker + bandit + diversity

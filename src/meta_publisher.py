@@ -12,6 +12,7 @@ Documentation: https://developers.facebook.com/docs/marketing-apis/
 import os
 import json
 import time
+import base64
 import logging
 import requests
 from typing import Optional
@@ -82,61 +83,45 @@ class MetaPublisher:
 
     # ----- Publication -----
 
-    def upload_video(self, video_url: str) -> str:
-        """Upload une vidéo depuis URL et retourne le video_id."""
+    def upload_image(self, image_bytes: bytes) -> str:
+        """Upload une image (octets bruts) et retourne son image_hash Meta."""
+        b64 = base64.b64encode(image_bytes).decode("ascii")
         result = self._request(
             "POST",
-            f"{self.ad_account_id}/advideos",
-            data={"file_url": video_url}
+            f"{self.ad_account_id}/adimages",
+            data={"bytes": b64}
         )
-        log.info(f"Video uploaded: {result['id']}")
-        return result["id"]
+        images = result.get("images") or {}
+        if not images:
+            raise RuntimeError(f"Upload image Meta : réponse inattendue {str(result)[:200]}")
+        first = next(iter(images.values()))
+        image_hash = first.get("hash")
+        if not image_hash:
+            raise RuntimeError(f"Upload image Meta : hash absent {str(result)[:200]}")
+        log.info(f"Image uploaded: {image_hash}")
+        return image_hash
 
-    def _video_thumbnail_url(self, video_id: str, max_wait_s: int = 150,
-                             interval_s: int = 5) -> str:
-        """
-        Meta exige une miniature dans video_data. Après upload, Meta traite
-        la vidéo puis génère des thumbnails. On poll jusqu'à en avoir une.
-        """
-        waited = 0
-        while waited < max_wait_s:
-            res = self._request(
-                "GET", video_id, params={"fields": "status,thumbnails"}
-            )
-            thumbs = (res.get("thumbnails") or {}).get("data") or []
-            if thumbs:
-                pref = next((t for t in thumbs if t.get("is_preferred")), thumbs[0])
-                return pref["uri"]
-            vstatus = (res.get("status") or {}).get("video_status")
-            if vstatus == "error":
-                raise RuntimeError(f"Meta : traitement vidéo {video_id} en erreur")
-            time.sleep(interval_s)
-            waited += interval_s
-        raise TimeoutError(
-            f"Pas de miniature Meta pour {video_id} après {max_wait_s}s"
-        )
-
-    def create_ad_creative(self, video_id: str, primary_text: str,
+    def create_ad_creative(self, image_hash: str, primary_text: str,
                            headline: str, description: str,
                            cta: str = "GET_QUOTE") -> str:
-        """Crée le creative (ce qui sera affiché). Pub à formulaire instantané :
-        le CTA ouvre le formulaire Meta natif, pas un lien externe."""
+        """Crée le creative image (ce qui sera affiché). Pub à formulaire
+        instantané : le CTA ouvre le formulaire Meta natif, pas un lien externe."""
         if not self.lead_gen_form_id:
             raise RuntimeError(
                 "lead_gen_form_id manquant dans config.meta — requis pour les "
                 "pubs à formulaire instantané (sinon les leads ne sont pas captés)."
             )
-        # Meta refuse un creative vidéo sans miniature (image_url/image_hash).
-        thumbnail_url = self._video_thumbnail_url(video_id)
+        # Pub single-image à lead form : link_data avec image_hash. Le `link`
+        # est requis par Meta mais inutilisé (le CTA ouvre le formulaire natif).
         creative = {
             "object_story_spec": {
                 "page_id": self.page_id,
-                "video_data": {
-                    "video_id": video_id,
-                    "image_url": thumbnail_url,
-                    "title": headline,
+                "link_data": {
+                    "image_hash": image_hash,
+                    "link": f"https://facebook.com/{self.page_id}",
                     "message": primary_text,
-                    "link_description": description,
+                    "name": headline,
+                    "description": description,
                     "call_to_action": {
                         "type": cta,
                         "value": {"lead_gen_form_id": self.lead_gen_form_id}
@@ -151,7 +136,7 @@ class MetaPublisher:
         )
         return result["id"]
 
-    def publish_ad(self, vertical: str, video_url: str,
+    def publish_ad(self, vertical: str, image_bytes: bytes,
                    primary_text: str, headline: str,
                    description: str, daily_budget: float) -> dict:
         """
@@ -162,12 +147,12 @@ class MetaPublisher:
         # 1. Récupère ou crée la campagne pour cette verticale
         campaign_id = self._get_or_create_campaign(vertical)
 
-        # 2. Upload vidéo
-        video_id = self.upload_video(video_url)
+        # 2. Upload image
+        image_hash = self.upload_image(image_bytes)
 
         # 3. Creative
         creative_id = self.create_ad_creative(
-            video_id, primary_text, headline, description
+            image_hash, primary_text, headline, description
         )
 
         # 4. Ad set avec budget
@@ -185,7 +170,7 @@ class MetaPublisher:
             "adset_id": adset_id,
             "ad_id": ad_id,
             "creative_id": creative_id,
-            "video_id": video_id
+            "image_hash": image_hash
         }
 
     def _get_or_create_campaign(self, vertical: str) -> str:

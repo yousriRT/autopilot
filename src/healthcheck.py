@@ -11,7 +11,7 @@ Vérifie :
 - Variables d'env critiques
 - Anthropic API joignable + clé valide
 - Meta API joignable + token valide + compte actif
-- Arcads API joignable
+- OpenAI API (clé image présente)
 - État du kill-switch budget
 - Dernier run de cron < 2h (sinon = cron mort)
 - Espace disque sur data/
@@ -41,17 +41,11 @@ def run_healthcheck(config: dict, claude_client, publisher, optimizer) -> tuple[
     report = {"checks": {}, "warnings": [], "errors": []}
     status = HEALTH_OK
 
-    # --- 1. Env vars critiques (selon le fournisseur vidéo configuré) ---
+    # --- 1. Env vars critiques (selon le fournisseur d'images configuré) ---
     required = ["ANTHROPIC_API_KEY", "META_ACCESS_TOKEN"]
-    provider = config.get("video_provider", "arcads")
-    if provider == "creatify":
-        required += ["CREATIFY_API_ID", "CREATIFY_API_KEY"]
-    elif provider == "heygen":
-        required.append("HEYGEN_API_KEY")
-        if config.get("heygen", {}).get("voice_source", "elevenlabs") == "elevenlabs":
-            required.append("ELEVENLABS_API_KEY")
-    else:
-        required.append("ARCADS_API_KEY")
+    provider = config.get("image_provider", "openai")
+    if provider == "openai":
+        required.append("OPENAI_API_KEY")
     for var in required:
         present = bool(os.getenv(var))
         report["checks"][f"env_{var}"] = "ok" if present else "missing"

@@ -244,7 +244,7 @@ class TestHealthcheckBranches:
     def base_setup(self, monkeypatch, mock_publisher):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
         monkeypatch.setenv("META_ACCESS_TOKEN", "x")
-        monkeypatch.setenv("ARCADS_API_KEY", "x")
+        monkeypatch.setenv("OPENAI_API_KEY", "x")
         claude = MagicMock()
         claude.models.list.return_value = iter([MagicMock()])
         mock_publisher._request.return_value = {"account_status": 1, "disable_reason": 0}

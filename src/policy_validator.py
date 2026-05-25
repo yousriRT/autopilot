@@ -2,7 +2,7 @@
 Policy Validator
 ================
 
-AVANT de payer pour générer une vidéo (Arcads coûte ~5-10$/vidéo) et
+AVANT de payer pour générer une image (gpt-image-1) et
 AVANT de pousser vers Meta (rejet = ad credit gaspillé), on valide
 le concept contre les policies Meta.
 
@@ -30,7 +30,7 @@ class PolicyResult(BaseModel):
 
 VALIDATION_SYSTEM = """Tu es un reviewer interne Meta Ads Policy. Sois STRICT.
 
-Le contexte est: pub vidéo UGC dans le télécom canadien (fibre/mobile/TV/sécurité résidentielle/forfait famille multi-lignes).
+Le contexte est: pub IMAGE FIXE dans le télécom canadien (fibre/mobile/TV/sécurité résidentielle/forfait famille multi-lignes). La créa contient un prompt visuel (image_prompt) + du copy (primary_text/headline/description).
 
 Vérifie ces 9 catégories de policy:
 
@@ -42,7 +42,7 @@ Vérifie ces 9 catégories de policy:
 6. **Unrealistic Outcomes (Meta)**: les chiffres doivent être plausibles (pas "économisez 1000$/mois")
 7. **Before/After (Meta)**: éviter les avant/après trop dramatiques sur factures
 8. **Negative Self-Perception (Meta)**: ne pas dire au lecteur qu'il est "stupide" / "mauvais" / "victime"
-9. **Mineurs (CRITIQUE pour verticale famille)**: si la créa est pour la verticale famille_4lignes, l'avatar parlant doit être adulte. Pas de mineur qui parle à la caméra. Mention d'ados en 3e personne OK ("mon ado", "mes enfants"), mais pas de mise en scène d'enfant comme protagoniste.
+9. **Mineurs (CRITIQUE pour verticale famille)**: si la créa est pour la verticale famille_4lignes, l'image ne doit pas mettre en scène un mineur comme sujet principal/identifiable. Évoquer des ados ("mon ado", "mes enfants") dans le copy est OK, mais pas une image centrée sur un enfant protagoniste.
 
 Pour chaque issue trouvée, sois précis et cite le passage problématique."""
 

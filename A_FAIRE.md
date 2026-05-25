@@ -50,14 +50,11 @@ Tout le reste en dépend. Deux options :
 - [x] Token Meta généré + validé (`meta_account: OK` au healthcheck)
 - [x] `.env` créé + chargement auto (`load_dotenv` ajouté à orchestrator)
 - [x] Clé **Anthropic** validée (`anthropic_api: ok` au healthcheck)
-- [x] ~~Arcads~~ (525 $/mois) puis ~~HeyGen~~ (avatar IA pas crédible, rejeté au test réel)
-- [x] → **Creatify** retenu (vrai UGC). Code implémenté + testé (376 tests)
-- [ ] Compte Creatify **plan API Starter (99 $/mois)** + clés `CREATIFY_API_ID` + `CREATIFY_API_KEY`
-- [ ] Choisir persona UGC (style selfie) + voix française via `tools/creatify_catalog.py`
-- [ ] Test 1 vidéo réelle → valider la qualité UGC avant relance
-- [x] ElevenLabs : clé OK, voix **Caroline QC** ajoutée + réglée (speed 1.12)
-- [x] Avatar HeyGen : `Ann_Casual_Front_public` (swappable)
-- [x] **Test vidéo réel validé par Yousri** (accent + vitesse PARFAIT)
+- [x] ~~Arcads / HeyGen / Creatify (vidéo UGC avatar)~~ → **abandonné** : créas **image uniquement, sans IA vidéo**
+- [x] → **OpenAI gpt-image-1** retenu pour générer l'image publicitaire (single image ad)
+- [ ] Clé **OpenAI** (`OPENAI_API_KEY`) + crédit sur le compte
+- [ ] Régler `openai.quality` (low/medium/high) selon le rendu/coût voulu
+- [ ] Test 1 image réelle → valider le rendu avant relance
 - [ ] (Optionnel) App Password **Gmail** pour le dashboard quotidien par email
 - [ ] (Optionnel) Clés **Supabase** si push automatique des leads vers le CRM
 
